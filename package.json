@@ -1,0 +1,19 @@
+{
+  "name": "agent-cost-monitor",
+  "version": "0.1.0",
+  "description": "One-line live spend and burn-rate status for AI coding agents (Claude Code first).",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "claude",
+    "lib",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
