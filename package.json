@@ -1,19 +1,36 @@
 {
   "name": "agent-cost-monitor",
-  "version": "0.1.0",
-  "description": "One-line live spend and burn-rate status for AI coding agents (Claude Code first).",
+  "version": "0.2.0",
+  "description": "One-line live spend and burn-rate status for AI coding agents: Claude Code today, DSH and Codex in progress. Installs itself into your agent's config.",
   "type": "module",
+  "bin": {
+    "acm": "bin/acm.mjs",
+    "agent-cost-monitor": "bin/acm.mjs"
+  },
   "scripts": {
     "test": "node --test"
   },
   "files": [
+    "bin",
+    "src",
     "claude",
     "lib",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "keywords": [
+    "claude-code",
+    "statusline",
+    "cost",
+    "tokens",
+    "burn-rate",
+    "deepseek",
+    "dsh",
+    "codex"
+  ],
   "engines": {
     "node": ">=20"
-  }
+  },
+  "license": "MIT"
 }
