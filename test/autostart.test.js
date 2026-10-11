@@ -103,10 +103,19 @@ test("the config keeps a user's values and fills in defaults for the rest", () =
 test("with no config file the window uses the documented defaults", () => {
   const cfg = resolveConfig(homeWith(undefined), {});
   assert.deepEqual(
-    { w: cfg.width, h: cfg.height, x: cfg.x, y: cfg.y, port: cfg.port, backend: cfg.backend, onTop: cfg.alwaysOnTop },
-    { w: 380, h: 600, x: 40, y: 80, port: 7420, backend: "browser", onTop: true },
+    { w: cfg.width, h: cfg.height, x: cfg.x, y: cfg.y, port: cfg.port, backend: cfg.backend, onTop: cfg.alwaysOnTop, burn: cfg.burnWindowMs },
+    { w: 225, h: 300, x: 40, y: 80, port: 7420, backend: "browser", onTop: true, burn: 15_000 },
   );
   assert.equal(cfg.currency, "CNY");
+});
+
+test("the burn window is configurable, and has a floor a rate cannot go below", () => {
+  assert.equal(resolveConfig(homeWith({ burnWindowMs: 60_000 }), {}).burnWindowMs, 60_000);
+  assert.equal(resolveConfig(homeWith({}), { ACM_BURN_WINDOW_MS: "30000" }).burnWindowMs, 30_000);
+  // Below a second it stops measuring a rate and starts reporting whichever single
+  // call happened to land inside the window.
+  assert.equal(resolveConfig(homeWith({ burnWindowMs: 50 }), {}).burnWindowMs, 1000);
+  assert.equal(resolveConfig(homeWith({ burnWindowMs: "nonsense" }), {}).burnWindowMs, 15_000);
 });
 
 test("the config file moves the window, and an env var beats the file", () => {
@@ -125,16 +134,18 @@ test("the config file moves the window, and an env var beats the file", () => {
 test("a nonsense size cannot produce a window that does not exist", () => {
   // A zero or negative size, a string, or a missing key all fall back rather than
   // handing the browser `--window-size=0,0` and producing an invisible window.
+  // Asserted against DEFAULT_CONFIG, not a literal: a default that moves should not
+  // need two more edits, and forgetting them is how this test failed once already.
   const cfg = resolveConfig(homeWith({ windowWidth: 0, windowHeight: -5, port: "abc" }), { ACM_WINDOW_HEIGHT: "nonsense" });
-  assert.equal(cfg.width, 380);
-  assert.equal(cfg.height, 600);
-  assert.equal(cfg.port, 7420);
+  assert.equal(cfg.width, DEFAULT_CONFIG.windowWidth);
+  assert.equal(cfg.height, DEFAULT_CONFIG.windowHeight);
+  assert.equal(cfg.port, DEFAULT_CONFIG.port);
 });
 
 test("a corrupt config file falls back to defaults instead of failing the launch", () => {
   const cfg = resolveConfig(homeWith("{ this is not json"), {});
-  assert.equal(cfg.width, 380);
-  assert.equal(cfg.backend, "browser");
+  assert.equal(cfg.width, DEFAULT_CONFIG.windowWidth);
+  assert.equal(cfg.backend, DEFAULT_CONFIG.backend);
 });
 
 test("always-on-top can be turned off, and only an explicit false does it", () => {

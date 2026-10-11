@@ -261,8 +261,11 @@ Whichever answers is **named on screen**, and the ones that were tried and faile
 listed with their reason. A window silently showing another host's numbers is worse
 than one showing none.
 
-`ACM_WINDOW_PORT` (default `7420`) moves the daemon, `ACM_WARN_PER_HOUR` (default
-`15`) moves the warn line, and `SPEND_WATCH_CURRENCY=USD` switches to dollars.
+The window's size, position, pinning and burn window all come from
+`~/.agent-cost-monitor.json`, and the same file decides the burn window the Claude
+Code status line uses — one setting, so the two renderers cannot disagree about the
+same session. Every key and every environment variable is in
+**[Configuration](#configuration)**.
 
 ### Codex specifics
 
@@ -306,8 +309,8 @@ those variables existed before the file did, and they are the per-invocation ove
 {
   "backend": "browser",
   "warnPerHour": 15,
-  "windowWidth": 380,
-  "windowHeight": 600,
+  "windowWidth": 225,
+  "windowHeight": 300,
   "windowX": 40,
   "windowY": 80,
   "alwaysOnTop": true,
@@ -318,12 +321,13 @@ those variables existed before the file did, and they are the per-invocation ove
 | Key | Default | Meaning | Env override |
 |---|---|---|---|
 | `backend` | `browser` | `browser` for an Edge/Chrome app window, `tauri` for the real widget | `ACM_WINDOW_BACKEND` |
-| `windowWidth` | `380` | Window width in pixels | `ACM_WINDOW_WIDTH` |
-| `windowHeight` | `600` | Window height in pixels | `ACM_WINDOW_HEIGHT` |
+| `windowWidth` | `225` | Window width in pixels | `ACM_WINDOW_WIDTH` |
+| `windowHeight` | `300` | Window height in pixels | `ACM_WINDOW_HEIGHT` |
 | `windowX` | `40` | Left edge, screen pixels | `ACM_WINDOW_X` |
 | `windowY` | `80` | Top edge, screen pixels | `ACM_WINDOW_Y` |
 | `alwaysOnTop` | `true` | Keep it above other windows | `ACM_ALWAYS_ON_TOP=0` to disable |
 | `warnPerHour` | `15` | Where the dashed warn line sits on the chart | `ACM_WARN_PER_HOUR` |
+| `burnWindowMs` | `15000` | The window the live burn rate `β(t)` is measured over — 15 seconds. The same name and meaning as the DSH plugin's setting, so one idea has one name. Below 1000 it clamps, because a sub-second window reports whichever single call happened to land in it rather than a rate. | `ACM_BURN_WINDOW_MS` |
 | `port` | `7420` | The local daemon's port | `ACM_WINDOW_PORT` |
 
 A value that is zero, negative, or not a number falls back to the default rather than
@@ -389,6 +393,17 @@ And these it only **reads**:
 7. **`lib/` is copied from dsh-budget-watcher `0.7.2`, not shared.** The two will
    drift on purpose — this project follows CLI hosts, the plugin follows DSH. If
    a fix lands in one, check the other.
+8. **"Always on top" is not "always visible".** Topmost windows stack among themselves,
+   so another always-on-top window activated later will cover this one while this one
+   is still genuinely topmost. The launcher therefore *checks* the window's own
+   `WS_EX_TOPMOST` style and reports it (`topmost=yes (ws_ex_topmost=yes)`) rather than
+   claiming success because the API returned true — and if the style is missing, the log
+   says `topmost=NO`, which is the one thing worth knowing before reporting a bug.
+9. **Placement can give up, and then the window is neither placed nor pinned.** The
+   launcher polls for the browser window for 90 seconds; a cold Edge start — especially
+   just after its previous window was closed — can exceed that on a loaded machine. The
+   log records `window not found within 90s`, and the window then appears at the
+   browser's own size in the browser's own position. Relaunching places it correctly.
 
 ## Hosts
 

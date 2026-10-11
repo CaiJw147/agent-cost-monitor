@@ -31,7 +31,7 @@ const CONFIG = resolveConfig(homedir());
 const PORT = CONFIG.port;
 const CURRENCY = CONFIG.currency;
 const SYMBOL = CURRENCY === "USD" ? "$" : "\u00a5";
-const BURN_WINDOW_MS = 15_000;
+const BURN_WINDOW_MS = CONFIG.burnWindowMs;
 const IDLE_IS_ENDED_MS = 30_000;
 const CACHE = process.env.SPEND_WATCH_CACHE ?? join(homedir(), ".cache", "spend-watch");
 const DSH_URL = process.env.ACM_DSH_URL ?? "http://127.0.0.1:19387/dsh-budget-watcher/balance";

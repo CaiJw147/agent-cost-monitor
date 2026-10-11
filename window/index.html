@@ -12,6 +12,15 @@
     background: #1b1c1e; color: #e8e8ea;
     -webkit-user-select: none; user-select: none;
   }
+  /* The window IS the viewport, so vw is a real measure of the space available. The
+     default is 225px wide, where a fixed 12.5px line wraps; these scale down instead
+     and stop growing on a large window. The chart needs none of this — it is SVG with
+     a viewBox, so its axis labels scale proportionally. */
+  .line { font-size: clamp(10px, 3.6vw, 12.5px); }
+  .source { font-size: clamp(10.5px, 3.8vw, 12.5px); }
+  .sub { font-size: clamp(9.5px, 3.2vw, 11px); }
+  .meta { font-size: clamp(9px, 3vw, 10.5px); }
+  .approx { font-size: clamp(9.5px, 3.2vw, 10.5px); }
   .title { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #9a9aa2; display: flex; align-items: center; gap: 6px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #3fb950; }
   /* Which host this is comes before the money: a window quietly showing another

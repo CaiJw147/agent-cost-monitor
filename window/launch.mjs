@@ -92,40 +92,74 @@ async function ensureDaemon() {
 }
 
 /**
- * Place, size and pin the window in one call, as soon as it exists.
+ * Place, size and pin the window, as soon as it exists — then keep asserting it.
  *
- * Two defects fixed here. The script used to run 2.5 seconds after the browser was
- * spawned, so a window that ignored `--window-size` sat at its own size on screen for
- * that whole time — a blank browser filling the display, then a snap to the corner.
- * It now polls every 100 ms and applies the geometry the moment there is a handle.
- * And it is spawned with `windowsHide`, because a console window flashing on every
- * launch is not acceptable for something meant to sit quietly in a corner.
+ * Three defects have been fixed here, each found by looking rather than by testing.
+ * The script used to run on a fixed 2.5-second timer, so a window that ignored
+ * `--window-size` sat filling the display before snapping to the corner; it now polls
+ * every 100 ms. It was spawned without `windowsHide`, so a console flashed; it is
+ * hidden now. And applying the flag that early turned out to lose it: the handle that
+ * exists at 100 ms can belong to a window the browser re-shows once the page paints,
+ * and re-showing drops WS_EX_TOPMOST — which is why the window stopped staying on top
+ * exactly when the placement got fast. So the geometry is applied immediately and the
+ * topmost flag is re-asserted over the next few seconds, re-finding the handle each
+ * time in case it changed.
+ *
+ * The script also *checks* the extended style afterwards and says so, rather than
+ * reporting success because SetWindowPos returned true.
  */
 function placeWindow(title) {
   if (process.platform !== "win32") return;
   const script = join(tmpdir(), "acm-place-window.ps1");
   const body = `
-$deadline = (Get-Date).AddSeconds(20)
-$handle = [IntPtr]::Zero
-while ((Get-Date) -lt $deadline -and $handle -eq [IntPtr]::Zero) {
+$onTop = ${CONFIG.alwaysOnTop ? "$true" : "$false"}
+$find = {
   $p = Get-Process -ErrorAction SilentlyContinue |
        Where-Object { $_.MainWindowTitle -like "*${title}*" } |
        Select-Object -First 1
-  if ($p) { $handle = $p.MainWindowHandle }
-  if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100 }
+  if ($p) { return $p.MainWindowHandle } else { return [IntPtr]::Zero }
 }
-if ($handle -eq [IntPtr]::Zero) { Write-Output "window not found"; exit 0 }
+$deadline = (Get-Date).AddSeconds(90)
+$handle = [IntPtr]::Zero
+while ((Get-Date) -lt $deadline -and $handle -eq [IntPtr]::Zero) {
+  $handle = & $find
+  if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 200 }
+}
+# 90 seconds, not 20: a browser started cold — especially just after its previous
+# window was closed — can take far longer than 20s to show the app window, and giving
+# up early leaves the window unplaced AND unpinned, which is worse than waiting.
+if ($handle -eq [IntPtr]::Zero) { Write-Output "window not found within 90s (the browser may still be starting)"; exit 0 }
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class AcmWin {
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+  // GetWindowLong rather than GetWindowLongPtr: the extended style is a 32-bit mask,
+  // and the Ptr form is a macro whose A/W export differs by platform.
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
+  public static bool IsTopmost(IntPtr h) {
+    return (GetWindowLong(h, -20) & 0x8) != 0;   // GWL_EXSTYLE, WS_EX_TOPMOST
+  }
 }
 "@
-$after = if (${CONFIG.alwaysOnTop ? "$true" : "$false"}) { [IntPtr](-1) } else { [IntPtr](-2) }
-# SWP_SHOWWINDOW = 0x0040; no NOMOVE/NOSIZE, because the geometry is ours to set.
-$ok = [AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, 0x0040)
-Write-Output $(if ($ok) { "placed ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}$(if (${CONFIG.alwaysOnTop ? "$true" : "$false"}) { ' topmost' })" } else { "SetWindowPos refused" })
+$after = if ($onTop) { [IntPtr](-1) } else { [IntPtr](-2) }
+# 0x0040 = SWP_SHOWWINDOW. No NOMOVE/NOSIZE: the geometry is ours to set.
+[void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, 0x0040)
+
+if ($onTop) {
+  foreach ($delay in @(600, 1200, 2400, 4000)) {
+    Start-Sleep -Milliseconds $delay
+    $fresh = & $find
+    if ($fresh -ne [IntPtr]::Zero) { $handle = $fresh }
+    [void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, 0x0040)
+  }
+  $state = if ([AcmWin]::IsTopmost($handle)) { "topmost=yes" } else { "topmost=NO" }
+} else {
+  $state = "topmost=off (configured)"
+}
+$check = if ([AcmWin]::IsTopmost($handle)) { "yes" } else { "no" }
+Write-Output "placed ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y} $state (ws_ex_topmost=$check)"
 `;
   try {
     writeFileSync(script, body);

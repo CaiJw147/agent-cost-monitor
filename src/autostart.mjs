@@ -86,11 +86,12 @@ export const claudeCommandPath = (home) => join(home, ".claude", "commands", "ac
 export const DEFAULT_CONFIG = {
   backend: "browser",
   warnPerHour: 15,
-  windowWidth: 380,
-  windowHeight: 600,
+  windowWidth: 225,
+  windowHeight: 300,
   windowX: 40,
   windowY: 80,
   alwaysOnTop: true,
+  burnWindowMs: 15_000,
   port: 7420,
 };
 
@@ -115,12 +116,25 @@ const positive = (value, fallback) => {
 };
 
 /**
+ * The burn window has a floor, where the geometry does not.
+ *
+ * A one-second window is not a smaller measurement of the same thing — it is a
+ * reading of whichever single call happened to land inside it, which is noise dressed
+ * as a rate. A second is the floor; the DSH plugin uses five for the same setting.
+ */
+const MIN_BURN_WINDOW_MS = 1000;
+
+/**
  * The whole precedence in one place: defaults, then the config file, then the
  * environment. The environment wins because it is the per-invocation override, and
  * because every variable here already existed before the file did.
+ *
+ * `burnWindowMs` keeps the DSH plugin's name for the same setting on purpose: the two
+ * tools are configured by the same person, and two names for one idea is a tax.
  */
 export function resolveConfig(home, env = process.env) {
   const merged = mergeConfig(readConfigFile(home), {});
+  const burnWindow = positive(env.ACM_BURN_WINDOW_MS, positive(merged.burnWindowMs, DEFAULT_CONFIG.burnWindowMs));
   return {
     backend: env.ACM_WINDOW_BACKEND ?? merged.backend,
     warnPerHour: Number.isFinite(Number(env.ACM_WARN_PER_HOUR)) ? Number(env.ACM_WARN_PER_HOUR) : Number(merged.warnPerHour),
@@ -131,5 +145,6 @@ export function resolveConfig(home, env = process.env) {
     x: positive(env.ACM_WINDOW_X, positive(merged.windowX, DEFAULT_CONFIG.windowX)),
     y: positive(env.ACM_WINDOW_Y, positive(merged.windowY, DEFAULT_CONFIG.windowY)),
     alwaysOnTop: env.ACM_ALWAYS_ON_TOP === undefined ? merged.alwaysOnTop !== false : env.ACM_ALWAYS_ON_TOP !== "0",
+    burnWindowMs: Math.max(MIN_BURN_WINDOW_MS, burnWindow),
   };
 }

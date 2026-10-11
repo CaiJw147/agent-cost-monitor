@@ -26,18 +26,24 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { burnPerHour, usageCost } from "../lib/cost.js";
 import { createPriceBook, canonicalName, parseOpenRouterModels } from "../lib/pricing.js";
 import { parseEcbDaily } from "../lib/fx.js";
+import { resolveConfig } from "../src/autostart.mjs";
 
 const ECB_DAILY_URL = "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml";
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
-/** Matches the DSH panel's live-burn window. */
-const BURN_WINDOW_MS = 15_000;
+// Read once at load: the status line is spawned per render, and the same config file
+// already decides the window's geometry and currency, so a burn window that lived
+// only in this file would make the two renderers disagree about the same session.
+const CONFIG = resolveConfig(homedir());
+
+/** The same window the window's chart uses, and the DSH panel's own default. */
+const BURN_WINDOW_MS = CONFIG.burnWindowMs;
 /** How old the on-disk pricing cache may be before a refresh is kicked off. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** An in-flight turn with nothing new for this long is treated as ended. */
 const IDLE_IS_ENDED_MS = 30_000;
 
-const CURRENCY = (process.env.SPEND_WATCH_CURRENCY ?? "CNY").trim().toUpperCase() === "USD" ? "USD" : "CNY";
+const CURRENCY = CONFIG.currency;
 const SYMBOL = CURRENCY === "USD" ? "$" : "\u00a5";
 const BETA = "\u03b2";
 const CACHE_DIR = process.env.SPEND_WATCH_CACHE ?? join(homedir(), ".cache", "spend-watch");

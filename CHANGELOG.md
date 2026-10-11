@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-10-11
+
+### Changed
+
+- **The default window is 225x300**, down from 380x600. At that width a fixed 12.5px
+  line wraps, so the text now scales with the window (`clamp()` against `vw` — the
+  window *is* the viewport) and stops growing again on a large one. The chart needs
+  none of this: it is SVG with a viewBox, so its labels scale proportionally.
+- **The live burn window is configurable, `burnWindowMs`, default `15000` (15 s)** — and
+  it is read by the **Claude Code status line as well as the window**, from the same
+  file, so `β(t)` cannot differ between the two renderers for the same session. It keeps
+  the DSH plugin's name for the same setting rather than inventing a second one. Below
+  1000 ms it clamps: a sub-second window does not measure a smaller rate, it reports
+  whichever single call happened to land inside it.
+
+### Fixed
+
+- **The window stopped being pinned, and my own speed fix caused it.** Making placement
+  fast made it apply `WS_EX_TOPMOST` to the handle that exists at ~100 ms — which can
+  belong to a window the browser re-shows once the page paints, and re-showing drops the
+  flag. The geometry is still applied immediately, and the topmost flag is now
+  re-asserted over the next four seconds, re-finding the handle each time in case it
+  changed. The script also *reads the window's extended style afterwards* and reports
+  `topmost=yes (ws_ex_topmost=yes)` or `topmost=NO`, instead of reporting success
+  because `SetWindowPos` returned true — verified on a real window.
+- **A slow browser start left the window unplaced and unpinned.** The placement poll gave
+  up after 20 seconds; a cold Edge start just after its previous window closed exceeded
+  that, and the failure was silent in the log. It now waits 90 seconds and says
+  `window not found within 90s` when it does.
+
 ## [0.7.0] — 2026-10-11
 
 ### Added
