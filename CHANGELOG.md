@@ -4,6 +4,47 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-10-11
+
+### Added
+
+- **A Codex adapter.** `src/codex.mjs` reads `~/.codex/sessions/**/rollout-*.jsonl` for
+  the per-call cache split and `~/.codex/state_5.sqlite` for a whole-thread total when
+  the rollout has none. Verified against a real 0.162.1 rollout: 18 usage records,
+  priced to ¥1.4139 for the turn and ¥3.3825 for the session on `gpt-6-sol`.
+- **`acm launch --host codex`**, and the host rides in the window's URL. The window now
+  reads that host's source first and **names it on screen**.
+- **Honest reporting when there is nothing to show.** The window lists which sources
+  were tried and why each failed, and labels a figure `≈` with its reason when only an
+  approximation was possible.
+
+### Changed
+
+- **The balance row is gone from the window.** It is DeepSeek's and only DSH can read
+  it, so in a window that also serves Codex and Claude Code it was a figure about a
+  different provider than the one being measured — and one that would never move for
+  two of the three hosts. Cost and burn rate are the whole job.
+- **Auto-launch is withdrawn.** Wrapping `codex` and `dsh-tui` in a PowerShell function
+  meant editing two profile files to save one command, and the window it opened was
+  showing another host's numbers half the time. Nothing writes a shim any more;
+  `acm clean-profiles` and `acm uninstall` still remove one written by an earlier
+  version, because a withdrawn feature has to stay reversible on machines that ran it.
+
+### Fixed
+
+- **The burn chart's series was a running total, not a windowed rate.** Every call was
+  added to one accumulator and nothing was ever removed as it aged out, so the line
+  climbed forever — the opposite of what a burn rate is for. On the dsh source it read
+  **6,146/h instead of 11.88/h**. Caught by reading an implausible axis label off a
+  screenshot, not by a test; the windowed rate is now a trailing two-pointer window,
+  with a test-shaped assertion comparing the cumulative figure against the real one.
+- **One synchronous source broke every source.** The Claude Code reader returns a plain
+  object, so chaining `.catch()` onto its result threw — and that error propagated out
+  of the fallback loop, so asking for `--host claude` reported "no data" while dsh was
+  answering fine one line later. Sources are now `await`ed, which handles both shapes.
+- **The auto-launch message named hosts it no longer wrapped**, and `dsh-tui`
+  reported "nothing to remove" as a failure once uninstall ran for every host.
+
 ## [0.5.0] — 2026-10-11
 
 ### Changed

@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Put the window on screen.
 //
-// Two backends, because they have different prerequisites:
-//
 //   default   a browser application window (Edge or Chrome), made always-on-top by
 //             one Win32 call. No toolchain, works today.
 //   --tauri   the real widget: no browser chrome, own process, always-on-top by
 //             configuration. Needs the Tauri CLI and a Rust build.
+//   --host h  which host this window is for (codex, dsh, claude): the page asks the
+//             daemon for that source first, so a Codex window does not quietly show
+//             Claude Code's numbers.
 //
-// Both point at the same local daemon, so the data path is identical.
+// Both backends point at the same local daemon, so the data path is identical.
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
@@ -19,7 +20,14 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..");
 const PORT = Number(process.env.ACM_WINDOW_PORT ?? 7420);
-const URL_ = `http://127.0.0.1:${PORT}/`;
+const HOST = (() => {
+  const i = process.argv.indexOf("--host");
+  return i >= 0 ? String(process.argv[i + 1] ?? "").trim().toLowerCase() : "";
+})();
+// The host rides in the URL rather than in the daemon's environment: the daemon is
+// often already running from an earlier launch, and the page is what knows which host
+// this particular window is for.
+const URL_ = `http://127.0.0.1:${PORT}/${HOST === "" ? "" : `?host=${encodeURIComponent(HOST)}`}`;
 const useTauri = process.argv.includes("--tauri");
 const say = (line) => process.stdout.write(line + "\n");
 

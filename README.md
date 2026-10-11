@@ -72,43 +72,35 @@ auto-launch
 done.
 ```
 
-### Auto-launch
+### Starting the window
 
-After installing, **typing `codex` or `dsh-tui` in PowerShell starts the window as
-well.** It rides along; you do not have to remember it.
+There is **no auto-launch**, deliberately. An earlier version wrapped `codex` and
+`dsh-tui` in a PowerShell function so the window rode along with them. That meant
+editing two profile files to save the user one command, and the window it opened was
+showing another host's numbers half the time — a cost with no matching benefit. The
+window is now started when you ask for it:
 
-**Claude Code is deliberately not wrapped.** Its status line already shows these
-figures inside the tool, so a window on top of it would be noise. `codex` and
-`dsh-tui` have no such row — which is what the window is for. The filter lives in the
-code rather than only in the defaults, so a config written before that decision cannot
-bring it back.
-
-Neither harness offers a hook for "the CLI was started" — Codex's slash commands are a
-fixed registry, and Claude Code's `statusLine` is a rendering hook, not a lifecycle
-one — so `acm` writes a small **PowerShell function** into your profile. PowerShell
-resolves a function ahead of an external command, so the function starts the window
-and then hands over to the real command with your arguments untouched. It is written
-into **both** profile files, because PowerShell 5.1 and 7 keep separate ones.
-
-Every failure path falls through to running the real command: a spend window that will
-not start must never stop your agent from starting.
-
-| | |
-|---|---|
-| `acm autostart status` | which profiles carry the shim |
-| `acm autostart off` | remove it; `/acm` and `acm launch` stay available |
-| `acm autostart on` | put it back |
-| `acm launch` | start the window now, by hand |
-| `acm install --no-autostart` | install everything except the shim |
-
-The switch is a file you can edit, `~/.agent-cost-monitor.json`:
-
-```json
-{ "autoLaunch": true, "hosts": ["codex", "dsh-tui"], "backend": "browser" }
+```bash
+acm launch                # start it now
+acm launch --host codex   # and tell it which host this window is for
 ```
 
-A fresh install turns it on; a re-install **respects a deliberate `false`**, because
-someone who turned it off did so on purpose.
+`--host` matters: it makes the window read that host's data first and *name it on
+screen*, instead of quietly falling back to whichever source happened to answer. A
+window showing Codex's numbers when you are running Claude Code is worse than one
+showing nothing.
+
+If a machine still carries the old shim, `acm clean-profiles` removes it, and
+`acm uninstall` does the same as part of removing everything.
+
+The configuration file is `~/.agent-cost-monitor.json`:
+
+```json
+{ "backend": "browser", "warnPerHour": 15 }
+```
+
+`warnPerHour` moves the dashed warn line on the chart. `backend` is `browser` or
+`tauri`, and `SPEND_WATCH_CURRENCY=USD` switches to dollars.
 
 ### Uninstalling
 
@@ -128,13 +120,12 @@ by a timestamped backup, so the file you had is always still on disk.
 
 ### Launching it from inside a harness
 
-- **Claude Code** — `/acm`. The installer writes `~/.claude/commands/acm.md`, so it
-  works whether or not auto-launch is on. (You rarely need it: the status line is
-  already in the tool.)
+- **Claude Code** — `/acm`. The installer writes `~/.claude/commands/acm.md`. You
+  rarely need it: the status line is already in the tool.
 - **Codex** — `!acm launch`. Codex has **no custom slash commands** (its registry is
   fixed: `/fork`, `/model`, `/statusline`, …), but it does have the `!` shell escape,
   so that is the equivalent. `acm` does not write a prompt file there, because it
-  would sit there doing nothing.
+  would sit there doing nothing. `!acm launch --host codex` points the window at Codex.
 
 ### A note on PATH
 
@@ -247,22 +238,53 @@ dsh-tui. The window is the renderer that does not care: one daemon, one page, an
 whatever the host writes as the source.
 
 ```bash
-node window/launch.mjs           # an Edge/Chrome app window, pinned always-on-top
-node window/launch.mjs --tauri   # the real widget (compiles Rust the first time)
+npm run window                    # an Edge/Chrome app window, pinned always-on-top
+npm run window -- --host codex    # ...reading Codex, and saying so on screen
+npm run window:tauri              # the real widget (compiles Rust the first time)
 ```
 
-It shows the balance, the same `turn / session · β(t) · β · clock` line, and the
+It shows the host it is reading, the `turn / session · β(t) · β · clock` line, and the
 **burn chart** — the windowed rate over time with the warn line across it, drawn the
 way the DSH panel draws it.
 
-Data comes from the DSH plugin's route (`ACM_DSH_URL`, default
-`http://127.0.0.1:19387/dsh-budget-watcher/balance`) when it answers, because that is
-the dsh-tui path and it already carries both the balance and the series. Failing
-that it prices the newest Claude Code transcript itself, so the window is useful
-before DSH is wired up rather than being a blank frame.
+**There is no balance row, on purpose.** The balance is DeepSeek's and only DSH can
+read it, so in a window that also serves Codex and Claude Code it was a figure about a
+different provider than the one being measured — and one that would never move for two
+of the three hosts. Cost and burn rate are the whole job.
+
+### Where the numbers come from
+
+Three sources, tried in the order you imply with `--host`, then DSH → Codex →
+Claude Code:
+
+| Source | What it reads |
+|---|---|
+| **dsh** | the dsh-budget-watcher plugin's route (`ACM_DSH_URL`) — the only source with a balance, which the window now ignores |
+| **codex** | `~/.codex/sessions/**/rollout-*.jsonl` for the per-call cache split, `~/.codex/state_5.sqlite` for a whole-thread total when the rollout has none |
+| **claude-code** | the newest `~/.claude/projects/**/*.jsonl` transcript with usage |
+
+Whichever answers is **named on screen**, and the ones that were tried and failed are
+listed with their reason. A window silently showing another host's numbers is worse
+than one showing none.
 
 `ACM_WINDOW_PORT` (default `7420`) moves the daemon, `ACM_WARN_PER_HOUR` (default
 `15`) moves the warn line, and `SPEND_WATCH_CURRENCY=USD` switches to dollars.
+
+### Codex specifics
+
+Codex's own logs are the richest of the three — `turn_context` records the model that
+*actually ran*, per turn, which is not the configured one (a config saying `gpt-6-sol`
+while sessions ran `gpt-6-luna` is why this reads logs at all) — but two things are
+worth knowing:
+
+- **Codex reports `input_tokens` as the whole input, cache included.** The engine's
+  `inputTokens` means the uncached remainder, so the cached half is subtracted rather
+  than billed twice.
+- **A refused turn leaves no usage at all.** Hitting a subscription usage limit ends
+  the turn with nothing recorded, which is not the same as spending nothing. When that
+  happens the window falls back to `threads.tokens_used` and labels the figure `≈`,
+  because only the uncached price can be applied to a total with no cache split — which
+  overstates rather than understates, the safe direction for a spend warning.
 
 ## Known limitations
 
@@ -291,13 +313,14 @@ before DSH is wired up rather than being a blank frame.
    drift on purpose — this project follows CLI hosts, the plugin follows DSH. If
    a fix lands in one, check the other.
 
-## Next hosts
+## Hosts
 
-- **Codex CLI** — `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` records
-  first-class turn lifecycle (`turn_context`, `task_started`, `task_complete`,
-  `turn_aborted`) and `token_count` events whose usage sits in
-  `payload.info.total_token_usage` / `last_token_usage`. The easiest adapter of
-  the three.
-- **dsh-tui** — needs no adapter at all: the dsh-budget-watcher plugin already
-  serves the figures over HTTP, and DSH's on-disk session files are empty stubs,
-  so the endpoint is the only real interface.
+| Host | Status |
+|---|---|
+| **Claude Code** | the status line, `/acm` for the window, and a transcript adapter |
+| **Codex CLI** | a rollout + SQLite adapter, and `acm launch --host codex`. No status line exists to hook, so the window is the renderer. |
+| **dsh-tui** | needs no adapter: the dsh-budget-watcher plugin already serves the figures over HTTP, and DSH's on-disk session files are empty stubs, so that endpoint is the only real interface. The window reads it. |
+
+The next host is whatever writes token usage somewhere readable. The pattern is one
+adapter (a pure parser, tested against real recorded payloads) plus one entry in the
+daemon's source list — `src/codex.mjs` and `fromCodex()` are the template.

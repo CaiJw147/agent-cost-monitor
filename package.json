@@ -1,7 +1,7 @@
 {
   "name": "agent-cost-monitor",
-  "version": "0.5.0",
-  "description": "One-line live spend and burn-rate status for AI coding agents: Claude Code today, DSH and Codex in progress. Installs itself into your agent's config, and ships a floating window for hosts that have no status line.",
+  "version": "0.6.0",
+  "description": "Live cost and burn-rate tracking for AI coding agents: a Claude Code status line, and a floating window for Codex and DSH that have no status row of their own.",
   "type": "module",
   "bin": {
     "acm": "bin/acm.mjs",

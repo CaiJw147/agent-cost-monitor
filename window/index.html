@@ -14,10 +14,11 @@
   }
   .title { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #9a9aa2; display: flex; align-items: center; gap: 6px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #3fb950; }
-  .balance { font-size: 26px; font-weight: 650; margin: 2px 0 8px; letter-spacing: -.01em; }
-  /* The note is a sentence, not a label: it gets its own line rather than overflowing
-     a 380px window, which the first screenshot showed it doing. */
-  .balance small { display: block; font-size: 11px; font-weight: 500; color: #9a9aa2; margin: 3px 0 0; letter-spacing: 0; white-space: normal; }
+  /* Which host this is comes before the money: a window quietly showing another
+     host's numbers is worse than one showing none. */
+  .source { font-size: 12.5px; font-weight: 600; margin: 3px 0 5px; }
+  .source span { font-weight: 400; color: #9a9aa2; font-size: 10.5px; }
+  .approx { color: #d9a441; font-size: 10.5px; margin: 0 0 4px; }
   .chartwrap { contain: inline-size; margin: 2px 0 6px; }
   svg { display: block; width: 100%; aspect-ratio: 300/112; height: auto; }
   .grid { stroke: #34353a; stroke-width: 1; }
@@ -34,7 +35,8 @@
 </head>
 <body>
   <div class="title"><span class="dot" id="dot"></span>agent cost monitor</div>
-  <div class="balance" id="balance">--<small id="balnote"></small></div>
+  <div class="source" id="source">--</div>
+  <div class="approx" id="approx"></div>
   <div class="chartwrap" id="chartwrap"></div>
   <div class="line" id="line">waiting for data…</div>
   <div class="sub" id="sub"></div>
@@ -85,36 +87,44 @@ function chart(data) {
 
 async function tick() {
   try {
-    render(await (await fetch("/data", { cache: "no-store" })).json());
+    const host = new URLSearchParams(location.search).get("host") || "";
+    const url = "/data" + (host ? "?host=" + encodeURIComponent(host) : "");
+    render(await (await fetch(url, { cache: "no-store" })).json());
   } catch (err) {
-    // A widget that freezes silently is worse than one that says what broke. The
-    // first version caught only the fetch, so an exception mid-render left the
-    // initial "waiting for data…" on screen while the balance above it updated.
+    // A widget that freezes silently is worse than one that says what broke.
     $("dot").style.background = "#d9534f";
     $("line").textContent = "window error: " + (err && err.message ? err.message : String(err));
   }
 }
 
+const HOST_LABEL = { codex: "Codex", dsh: "dsh-tui", "claude-code": "Claude Code", claude: "Claude Code" };
+
 function render(data) {
   const sym = data.symbol || "\u00a5";
+  const requested = data.requested && data.requested !== "auto" ? data.requested : "";
 
   if (data.state !== "ok") {
     $("dot").style.background = "#d9534f";
-    $("balance").innerHTML = "--";
+    $("source").textContent = requested ? HOST_LABEL[requested] + " \u2014 no data" : "no data";
+    // Say which sources were tried and why each failed. Silence here is how a working
+    // window reads as broken.
+    $("approx").textContent = "";
     $("line").innerHTML = '<span class="hint">' + (data.hint || "no data") + "</span>";
-    $("sub").textContent = "";
+    $("sub").textContent = (data.attempts || [])
+      .map((a) => HOST_LABEL[a.source] + ": " + (a.ok ? "ok" : a.reason || "no data"))
+      .join("  \u00b7  ");
     $("meta").textContent = "";
     $("chartwrap").innerHTML = "";
     return;
   }
 
   $("dot").style.background = data.liveBurn > 0 ? "#d9a441" : "#3fb950";
-  if (data.balance) {
-    $("balance").innerHTML = money(data.balance.amount, data.balance.currency === "USD" ? "$" : "\u00a5") +
-      " <small>" + (data.balance.currency || "") + " balance</small>";
-  } else {
-    $("balance").innerHTML = "--<small>" + (data.balanceNote || "no balance for this provider") + "</small>";
-  }
+  // Name the host, and mention the alternatives only when one of them was actually
+  // tried and failed — "only source needed" was accurate and read as noise.
+  const failed = (data.attempts || []).filter((a) => a.source !== data.source && !a.ok);
+  $("source").innerHTML = (HOST_LABEL[data.source] || data.source) +
+    (failed.length > 0 ? " <span>" + failed.map((a) => a.source).join(", ") + " unavailable</span>" : "");
+  $("approx").textContent = data.approximate ? "\u2248 " + (data.note || "approximate") : "";
 
   $("chartwrap").innerHTML = chart(data);
   const b = "\u03b2";
@@ -125,7 +135,7 @@ function render(data) {
     " \u00b7 " + clock(data.elapsedMs);
   $("sub").textContent = data.turns + " turn(s) \u00b7 " + (data.models || []).join(", ") +
     (data.unpriced > 0 ? " \u00b7 " + data.unpriced + " unpriced" : "");
-  $("meta").textContent = "source: " + data.source + (data.sourceDetail ? " \u2014 " + data.sourceDetail : "");
+  $("meta").textContent = (data.note ? data.note + " \u00b7 " : "") + (data.sourceDetail || "");
 }
 
 tick();

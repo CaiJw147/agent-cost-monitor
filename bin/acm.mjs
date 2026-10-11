@@ -17,9 +17,6 @@ import { fileURLToPath } from "node:url";
 
 import { describeHosts, looksLikePluginDir, planClaudeInstall, planClaudeUninstall, pluginSpec } from "../src/install.mjs";
 import {
-  DEFAULT_HOSTS,
-  applyBlock,
-  buildShimBlock,
   claudeCommandFile,
   claudeCommandPath,
   configPath,
@@ -27,7 +24,6 @@ import {
   mergeConfig,
   profilePaths,
   removeBlock,
-  shimHosts,
 } from "../src/autostart.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -52,7 +48,6 @@ const option = (name) => {
 const hostArg = option("host") ?? "auto";
 const dryRun = flag("dry-run");
 const force = flag("force");
-const noAutostart = flag("no-autostart");
 const say = (line = "") => process.stdout.write(line + "\n");
 
 const settingsPath = () => join(homedir(), ".claude", "settings.json");
@@ -250,16 +245,17 @@ function writeConfig(next) {
   }
 }
 
-/** Start the window now. This is what the shell shim and `/acm` call. */
+/** Start the window now. This is what `/acm` and the user call. */
 function launch({ quiet }) {
   if (!existsSync(LAUNCH_SCRIPT)) {
     if (!quiet) say(`  the window is not in this install (${LAUNCH_SCRIPT} is missing)`);
     return 1;
   }
-  // Detached and unref'd: the harness must start at the same speed whether the
-  // window comes up or not, and a GUI process must never hold this one open.
-  spawn(process.execPath, [LAUNCH_SCRIPT], { detached: true, stdio: "ignore" }).unref();
-  if (!quiet) say(`  window starting at ${WINDOW_URL}`);
+  const host = option("host") ?? "";
+  // Detached and unref'd: a GUI process must never hold this one open, and the window
+  // takes long enough to start that waiting on it would be felt.
+  spawn(process.execPath, [LAUNCH_SCRIPT, ...(host === "" ? [] : ["--host", host])], { detached: true, stdio: "ignore" }).unref();
+  if (!quiet) say(`  window starting at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}`);
   return 0;
 }
 
@@ -278,66 +274,29 @@ function writeClaudeCommand() {
 }
 
 /**
- * Put the shim into the user's PowerShell profiles.
+ * Remove a shim block written by a version that had auto-launch.
  *
- * Both of them, because 5.1 and 7 are separate files. Idempotent by construction:
- * the block is fenced and `applyBlock` replaces it in place, so re-running after the
- * package moves corrects the paths instead of stacking a second copy.
+ * Nothing writes one any more — both remaining hosts were given up, because the
+ * window that rode along with them showed the wrong host's numbers half the time. But
+ * a withdrawn feature still has to be cleanly reversible on machines that ran it, so
+ * this stays and `uninstall` calls it.
  */
-function autostartOn(config) {
-  const hosts = shimHosts(config.hosts);
-  const block = buildShimBlock({ hosts, acmEntry: join(HERE, "acm.mjs"), nodePath: process.execPath });
-  let written = 0;
-  for (const path of profilePaths(homedir())) {
-    const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-    const already = hasBlock(existing);
-    if (already && existing.includes(block)) {
-      say(`  unchanged ${path}`);
-      continue;
-    }
-    if (dryRun) {
-      say(`  would ${already ? "update" : "add"} the block in ${path}`);
-      continue;
-    }
-    try {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, applyBlock(existing, block));
-      written += 1;
-      say(`  ${already ? "updated  " : "added    "} ${path}`);
-    } catch (error) {
-      say(`  failed    ${path}: ${error.message}`);
-    }
-  }
-  if (written === 0 && !dryRun) say("  (already in place)");
-  return written;
-}
-
-function autostartOff() {
+function removeShimBlock() {
   let removed = 0;
   for (const path of profilePaths(homedir())) {
     if (!existsSync(path)) continue;
     const existing = readFileSync(path, "utf8");
     if (!hasBlock(existing)) continue;
     if (dryRun) {
-      say(`  would remove the block from ${path}`);
+      say(`  would remove an old auto-launch block from ${path}`);
       continue;
     }
     writeFileSync(path, removeBlock(existing).text);
     removed += 1;
     say(`  removed   ${path}`);
   }
-  if (removed === 0 && !dryRun) say("  (nothing of ours in either profile)");
+  if (!dryRun) say(removed === 0 ? "  (no old auto-launch block in either profile)" : "  (old auto-launch block removed)");
   return removed;
-}
-
-function autostartStatus(config) {
-  for (const path of profilePaths(homedir())) {
-    const present = existsSync(path) && hasBlock(readFileSync(path, "utf8"));
-    say(`  ${present ? "installed" : "absent   "}  ${path}`);
-  }
-  say(`  config: autoLaunch=${config.autoLaunch}  hosts=${(config.hosts ?? DEFAULT_HOSTS).join(", ")}`);
-  say(`  config file: ${CONFIG_FILE}`);
-  return 0;
 }
 
 /**
@@ -352,8 +311,8 @@ function autostartStatus(config) {
 function removeEverything({ self, keepCache }) {
   let failures = 0;
 
-  say("\nauto-launch");
-  autostartOff();
+  say("\nold auto-launch block");
+  removeShimBlock();
 
   say("\n/acm");
   const commandFile = claudeCommandPath(homedir());
@@ -424,48 +383,24 @@ function main() {
   if (command === "help" || flag("help")) {
     say("acm — live spend for your coding agent\n");
     say("  acm install [--host h]     configure a host (claude | dsh | all; default: claude)");
-    say("                             and set up auto-launch, unless --no-autostart");
-    say("  acm launch [--quiet]       start the window now (what the shim and /acm call)");
-    say("  acm autostart on|off|status  the shim that rides along with `claude` / `codex`");
+    say("  acm launch [--host h]      start the window now (--host codex points it at Codex)");
     say("  acm status                 what is detected and configured");
     say("  acm uninstall              remove everything acm added to your machine");
     say("                             (--self also uninstalls the npm package)");
     say("                             (--keep-cache leaves the pricing cache)");
+    say("  acm clean-profiles         remove an old auto-launch block, if you have one");
     say("  acm doctor                 check the pieces the status line needs\n");
     say("  --dry-run                  print the plan, change nothing");
     say("  --force                    replace a status line configured by something else");
-    say("  --no-autostart             do not touch your PowerShell profiles");
     return 0;
   }
   if (command === "status") return status();
   if (command === "launch") return launch({ quiet: flag("quiet") });
-
-  if (command === "autostart") {
-    const mode = argv.find((a) => ["on", "off", "status"].includes(a)) ?? "status";
-    const config = mergeConfig(readConfig(), {});
-    if (mode === "on") {
-      config.autoLaunch = true;
-      if (!dryRun && !writeConfig(config)) say(`  could not write ${CONFIG_FILE}`);
-      say("auto-launch on");
-      autostartOn(config);
-      if (!dryRun) writeClaudeCommand();
-      const shimmed = shimHosts(config.hosts);
-      say(`\n  Typing ${shimmed.map((h) => `\`${h}\``).join(" or ")} in PowerShell now brings the window up with it.`);
-      say("  Claude Code is deliberately not wrapped — its own status line already shows these figures.");
-      say("  Codex has no custom slash commands, so inside it use: !acm launch");
-      return 0;
-    }
-    if (mode === "off") {
-      config.autoLaunch = false;
-      if (!dryRun && !writeConfig(config)) say(`  could not write ${CONFIG_FILE}`);
-      say("auto-launch off");
-      autostartOff();
-      // Left in place on purpose: this is the command the user reaches for now.
-      if (!dryRun) writeClaudeCommand();
-      say("\n  The window is still one command away: `acm launch`, or `/acm` in Claude Code.");
-      return 0;
-    }
-    return autostartStatus(config);
+  if (command === "clean-profiles") {
+    // Auto-launch is withdrawn, but machines that ran it still carry the block.
+    say("old auto-launch block");
+    removeShimBlock();
+    return 0;
   }
 
   if (command === "doctor") {
@@ -495,21 +430,16 @@ function main() {
   }
 
   if (command === "install") {
-    say("\nauto-launch");
-    // A fresh install turns this on; a re-install respects a deliberate `false`,
-    // because someone who turned it off did so on purpose.
-    const config = mergeConfig(readConfig(), noAutostart ? { autoLaunch: false } : {});
+    // The config is written so there is something to edit, and `/acm` is written so
+    // the window is always one command away. There is no auto-launch step any more:
+    // wrapping the host commands meant editing two shell profiles to save one command,
+    // and the window it opened showed the wrong host's numbers half the time.
+    const config = mergeConfig(readConfig(), {});
+    say("\nconfig and /acm");
     if (!dryRun && !writeConfig(config)) say(`  could not write ${CONFIG_FILE}`);
-    if (config.autoLaunch === false) {
-      say("  off in config — the profiles are left alone.");
-      say("  Launch it yourself with `acm launch`, or `/acm` inside Claude Code.");
-    } else {
-      autostartOn(config);
-      say("  Codex has no custom slash commands, so inside it use: !acm launch");
-    }
-    // `/acm` is written either way — with auto-launch off it is the whole mechanism,
-    // and with it on it is the manual override.
+    else if (!dryRun) say(`  config    ${CONFIG_FILE}`);
     if (!dryRun) writeClaudeCommand();
+    say("  Codex has no custom slash commands, so inside it use: !acm launch");
   }
 
   if (command === "uninstall") {
