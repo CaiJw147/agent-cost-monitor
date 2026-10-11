@@ -3,6 +3,11 @@
 node_modules/
 src-tauri/target/
 
+# Tauri regenerates these on every build (the ACL manifests and window schemas).
+# They are 4600+ lines and churn on every Tauri version bump, so tracking them
+# would bury the real diff.
+src-tauri/gen/schemas/
+
 # Local scratch
 *.log
 .window-shot.png
