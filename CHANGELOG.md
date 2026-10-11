@@ -4,6 +4,48 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-10-11
+
+### Added
+
+- **A window: the same figures, outside the TUI.** `window/serve.mjs` is a local
+  daemon that serves one page and one JSON endpoint; `window/index.html` draws the
+  balance, the one-line figures and the **burn chart** — the windowed rate over
+  time, with the warn line across it — in the same visual language as the DSH panel.
+  Two data sources, in order: the DSH plugin's own HTTP route when it answers (the
+  dsh-tui path, which already carries the balance and the series), otherwise the
+  newest Claude Code transcript priced by the same engine.
+- **Two ways to put it on screen.** `node window/launch.mjs` uses an Edge or Chrome
+  application window pinned always-on-top by `SetWindowPos` — no toolchain, works
+  today. `node window/launch.mjs --tauri` builds and runs the real widget under
+  `src-tauri/`, which needs no browser chrome and declares `always_on_top` in Rust.
+  Both read the same daemon, so the data path is identical.
+- **The Tauri project**, with icons generated from the panel screenshot, a
+  frameless-capable config, and `Cargo.toml` sized for a small release binary.
+
+### Fixed
+
+- **Three bugs the screenshot caught that no test would have.** `FindWindow(null,
+  title)` does not reliably match a browser's app window, and Edge ignores
+  `--window-position` when restoring window state — so the window opened
+  off-position and was never pinned; it now goes through the process's
+  `MainWindowHandle` with a retry, and `SetWindowPos` carries the geometry. The
+  headline burn rate was computed at the *last settled point* rather than *now*,
+  so an idle session looked like it was still spending. And `$("balance").innerHTML`
+  replaces the element's children, which destroyed the `<small id="balnote">` the
+  very next line set `textContent` on — an exception mid-render that left the
+  initial "waiting for data…" on screen while the balance above it updated. The
+  render is now wrapped so a widget shows what broke instead of freezing.
+
+### Notes
+
+- **Codex CLI 0.162.1 keeps token usage in `state_5.sqlite`, not the rollout** (see
+  the README's next-hosts note). `threads` carries `model`, `model_provider` and
+  `tokens_used`. Verified against real rows: 3,272,214 and 316,945 tokens on
+  `gpt-6-astra`, 215,984 on `codex-auto-review`, and 0 on the newest thread — whose
+  `error_json` reads *"You've hit your usage limit"*, so the run was refused rather
+  than unrecorded.
+
 ## [0.2.0] — 2026-10-10
 
 ### Added

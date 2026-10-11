@@ -162,6 +162,30 @@ is refreshed by a detached child process — the line itself answers from the ca
 and never waits on a stranger's server. The first ever run does one short inline
 fetch so the very first line is already priced.
 
+## The window
+
+The status line only exists where the host provides one, which rules out Codex and
+dsh-tui. The window is the renderer that does not care: one daemon, one page, and
+whatever the host writes as the source.
+
+```bash
+node window/launch.mjs           # an Edge/Chrome app window, pinned always-on-top
+node window/launch.mjs --tauri   # the real widget (compiles Rust the first time)
+```
+
+It shows the balance, the same `turn / session · β(t) · β · clock` line, and the
+**burn chart** — the windowed rate over time with the warn line across it, drawn the
+way the DSH panel draws it.
+
+Data comes from the DSH plugin's route (`ACM_DSH_URL`, default
+`http://127.0.0.1:19387/dsh-budget-watcher/balance`) when it answers, because that is
+the dsh-tui path and it already carries both the balance and the series. Failing
+that it prices the newest Claude Code transcript itself, so the window is useful
+before DSH is wired up rather than being a blank frame.
+
+`ACM_WINDOW_PORT` (default `7420`) moves the daemon, `ACM_WARN_PER_HOUR` (default
+`15`) moves the warn line, and `SPEND_WATCH_CURRENCY=USD` switches to dollars.
+
 ## Known limitations
 
 1. **Everything is priced as one pot.** Subagent (sidechain) spend is included in

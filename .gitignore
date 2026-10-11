@@ -1,0 +1,8 @@
+# Dependencies and build output — the Tauri target directory alone is hundreds of
+# megabytes once a window has been compiled, and it is regenerable.
+node_modules/
+src-tauri/target/
+
+# Local scratch
+*.log
+.window-shot.png

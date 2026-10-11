@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>agent-cost-monitor</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 10px 12px 12px;
+    font: 13px/1.45 ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    background: #1b1c1e; color: #e8e8ea;
+    -webkit-user-select: none; user-select: none;
+  }
+  .title { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #9a9aa2; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #3fb950; }
+  .balance { font-size: 26px; font-weight: 650; margin: 2px 0 8px; letter-spacing: -.01em; }
+  /* The note is a sentence, not a label: it gets its own line rather than overflowing
+     a 380px window, which the first screenshot showed it doing. */
+  .balance small { display: block; font-size: 11px; font-weight: 500; color: #9a9aa2; margin: 3px 0 0; letter-spacing: 0; white-space: normal; }
+  .chartwrap { contain: inline-size; margin: 2px 0 6px; }
+  svg { display: block; width: 100%; aspect-ratio: 300/112; height: auto; }
+  .grid { stroke: #34353a; stroke-width: 1; }
+  .burn { fill: none; stroke: #4c8dff; stroke-width: 1.6; stroke-linejoin: round; }
+  .warn { stroke: #d9a441; stroke-width: 1; stroke-dasharray: 4 3; }
+  .axis { fill: #8b8b93; font-size: 9px; font-family: inherit; }
+  .axiswarn { fill: #d9a441; font-size: 9px; font-weight: 600; font-family: inherit; }
+  .line { font-size: 12.5px; }
+  .line b { font-weight: 600; }
+  .sub { color: #9a9aa2; font-size: 11px; margin-top: 4px; }
+  .meta { color: #77777f; font-size: 10.5px; margin-top: 6px; border-top: 1px solid #2b2c30; padding-top: 6px; }
+  .hint { color: #d9a441; font-size: 11.5px; }
+</style>
+</head>
+<body>
+  <div class="title"><span class="dot" id="dot"></span>agent cost monitor</div>
+  <div class="balance" id="balance">--<small id="balnote"></small></div>
+  <div class="chartwrap" id="chartwrap"></div>
+  <div class="line" id="line">waiting for data…</div>
+  <div class="sub" id="sub"></div>
+  <div class="meta" id="meta"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (v, s) => s + (Number.isFinite(v) ? v : 0).toFixed(2);
+const clock = (ms) => {
+  const t = Math.max(0, Math.round((ms || 0) / 1000));
+  return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+};
+
+// The same shape the panel draws: windowed rate over time, a warn line across it,
+// and an axis whose top is a round number so the labels do not jitter.
+function chart(data) {
+  const series = (data.series || []).filter((p) => Number.isFinite(p.atMs) && Number.isFinite(p.amountPerHour));
+  const W = 300, H = 112, L = 26, R = 6, T = 12, B = 12;
+  if (series.length < 2) return '<div class="sub">not enough settled points to draw yet</div>';
+
+  const xs = series.map((p) => p.atMs);
+  const t0 = Math.min(...xs), t1 = Math.max(...xs);
+  const span = Math.max(1, t1 - t0);
+  const warn = Number(data.warnPerHour) || 0;
+  const peak = Math.max(warn, ...series.map((p) => p.amountPerHour), 1);
+  const step = Math.pow(10, Math.floor(Math.log10(peak / 4)));
+  const top = Math.max(step * Math.ceil(peak / step / 4) * 4, step);
+  const x = (t) => L + ((t - t0) / span) * (W - L - R);
+  const y = (v) => T + (1 - v / top) * (H - T - B);
+
+  const pts = series.map((p) => x(p.atMs).toFixed(1) + "," + y(p.amountPerHour).toFixed(1)).join(" ");
+  const ticks = [0, top / 2, top].map((v) =>
+    `<line class="grid" x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}"/>
+     <text class="axis" x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end">\u00a5${v >= 10 ? Math.round(v) : v.toFixed(1)}</text>`).join("");
+  const warnLine = warn > 0 && warn <= top
+    ? `<line class="warn" x1="${L}" y1="${y(warn).toFixed(1)}" x2="${W - R}" y2="${y(warn).toFixed(1)}"/>
+       <text class="axiswarn" x="${W - R}" y="${(y(warn) - 3).toFixed(1)}" text-anchor="end">warn \u00a5${Math.round(warn)}</text>`
+    : "";
+  const hm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="burn rate over time">
+    ${ticks}${warnLine}
+    <polyline class="burn" points="${pts}"/>
+    <text class="axis" x="${L}" y="${H - 1}">${hm(t0)}</text>
+    <text class="axis" x="${W - R}" y="${H - 1}" text-anchor="end">${hm(t1)}</text>
+  </svg>`;
+}
+
+async function tick() {
+  try {
+    render(await (await fetch("/data", { cache: "no-store" })).json());
+  } catch (err) {
+    // A widget that freezes silently is worse than one that says what broke. The
+    // first version caught only the fetch, so an exception mid-render left the
+    // initial "waiting for data…" on screen while the balance above it updated.
+    $("dot").style.background = "#d9534f";
+    $("line").textContent = "window error: " + (err && err.message ? err.message : String(err));
+  }
+}
+
+function render(data) {
+  const sym = data.symbol || "\u00a5";
+
+  if (data.state !== "ok") {
+    $("dot").style.background = "#d9534f";
+    $("balance").innerHTML = "--";
+    $("line").innerHTML = '<span class="hint">' + (data.hint || "no data") + "</span>";
+    $("sub").textContent = "";
+    $("meta").textContent = "";
+    $("chartwrap").innerHTML = "";
+    return;
+  }
+
+  $("dot").style.background = data.liveBurn > 0 ? "#d9a441" : "#3fb950";
+  if (data.balance) {
+    $("balance").innerHTML = money(data.balance.amount, data.balance.currency === "USD" ? "$" : "\u00a5") +
+      " <small>" + (data.balance.currency || "") + " balance</small>";
+  } else {
+    $("balance").innerHTML = "--<small>" + (data.balanceNote || "no balance for this provider") + "</small>";
+  }
+
+  $("chartwrap").innerHTML = chart(data);
+  const b = "\u03b2";
+  $("line").innerHTML =
+    "<b>" + money(data.turnCost, sym) + "</b> / " + money(data.sessionCost, sym) +
+    " \u00b7 " + b + "(t) " + money(data.liveBurn, sym) + "/h" +
+    " \u00b7 " + b + " " + money(data.averageBurn, sym) + "/h" +
+    " \u00b7 " + clock(data.elapsedMs);
+  $("sub").textContent = data.turns + " turn(s) \u00b7 " + (data.models || []).join(", ") +
+    (data.unpriced > 0 ? " \u00b7 " + data.unpriced + " unpriced" : "");
+  $("meta").textContent = "source: " + data.source + (data.sourceDetail ? " \u2014 " + data.sourceDetail : "");
+}
+
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
