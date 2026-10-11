@@ -4,6 +4,49 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-10-11
+
+### Changed
+
+- **Claude Code is no longer wrapped by auto-launch.** Its status line already shows
+  these figures *inside* the tool, so a window riding along with `claude` was noise on
+  top of a row that works. `codex` and `dsh-tui` keep the shim — they have no such
+  row, which is the whole reason the window exists. The filter lives in
+  `shimHosts()` rather than only in the defaults, so a config written before this
+  decision cannot bring it back, and `/acm` remains for anyone who wants the window
+  anyway.
+- **`acm uninstall` is now total.** It previously removed one host; now it removes
+  every host, both profile blocks, the `/acm` command, the config and the pricing
+  cache — because a trail of edits across a settings file, two shell profiles and a
+  command directory is what stops people installing something at all. `--host` still
+  narrows it, `--keep-cache` leaves the cache, and `--self` also runs
+  `npm uninstall -g agent-cost-monitor`, which is the one thing acm cannot quietly do
+  from under its own feet.
+
+### Fixed
+
+- **"Not installed" stopped being reported as a failure.** With uninstall running for
+  every host, `dsh-tui` will usually have nothing to remove; asking pnpm to remove a
+  package that was never added reported a problem that was not one.
+- **The auto-launch message named the wrong hosts.** It still said "typing `claude` or
+  `codex`", which stopped being true the moment Claude Code was unwrapped. It is
+  generated from the hosts actually shimmed.
+
+### Verified
+
+- **The whole thing reverses.** Ran `acm uninstall` for real and confirmed afterwards
+  that the `statusLine`, both profile blocks, `~/.claude/commands/acm.md`,
+  `~/.agent-cost-monitor.json` and `~/.cache/spend-watch` were all gone and that the
+  unrelated settings (a4phone's three hooks, the whole `env` block) survived; then
+  restored with `acm install` and confirmed a fresh shell resolves the way it should.
+- **Command resolution, in a fresh shell with the profile loaded**: `claude` →
+  `[ExternalScript]`, `codex` → `[Function]`, `dsh-tui` → `[Function]`, `acm` →
+  `[ExternalScript]` from `%APPDATA%\npm`. That pairing is the proof: the shim wins
+  where it should, and *does not* where it was removed.
+- **`acm` is on PATH the way any global npm package is** — `npm link` produced
+  `acm.ps1`, `acm.cmd` and `agent-cost-monitor.*` in `%APPDATA%\npm`, which is what
+  `npm install -g` does for a new user with no configuration.
+
 ## [0.4.0] — 2026-10-11
 
 ### Added

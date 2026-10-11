@@ -18,8 +18,16 @@ import { join } from "node:path";
 export const MARK_BEGIN = "# >>> agent-cost-monitor >>>";
 export const MARK_END = "# <<< agent-cost-monitor <<<";
 
-/** Default hosts: the ones worth shimming, in the order they are written. */
-export const DEFAULT_HOSTS = ["claude", "codex", "dsh-tui"];
+/**
+ * Default hosts: the ones that have no status line of their own.
+ *
+ * `claude` is deliberately absent. Claude Code has an additive status line that
+ * shows these figures *inside* the tool, so wrapping the command would add a window
+ * nobody asked for on top of a row that already works. The window is for the hosts
+ * that cannot draw one — Codex and dsh-tui — and `/acm` remains available everywhere
+ * for when someone wants it anyway.
+ */
+export const DEFAULT_HOSTS = ["codex", "dsh-tui"];
 
 /**
  * Both profile files.
@@ -36,6 +44,20 @@ export function profilePaths(home) {
 }
 
 export const configPath = (home) => join(home, ".agent-cost-monitor.json");
+
+/**
+ * Which hosts actually get a shim.
+ *
+ * `claude` is filtered out even when a configuration still lists it, because its own
+ * status line already shows these figures: wrapping the command would open a window
+ * on top of a row that works. That is a correction, not a preference, so it holds
+ * regardless of what a stale config says — `/acm` is there for anyone who wants the
+ * window anyway.
+ */
+export function shimHosts(hosts) {
+  const list = Array.isArray(hosts) && hosts.length > 0 ? hosts : DEFAULT_HOSTS;
+  return list.filter((host) => host !== "claude");
+}
 
 /** A single-quoted PowerShell literal. */
 const psQuote = (value) => `'${String(value).replace(/'/g, "''")}'`;

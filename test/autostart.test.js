@@ -16,9 +16,20 @@ import {
   mergeConfig,
   profilePaths,
   removeBlock,
+  shimHosts,
 } from "../src/autostart.mjs";
 
 const OPTIONS = { hosts: ["claude", "codex"], acmEntry: "C:\\pkg\\bin\\acm.mjs", nodePath: "C:\\nodejs\\node.exe" };
+
+test("Claude Code is never shimmed, even when a config still asks for it", () => {
+  // Its own status line already shows these figures, so wrapping the command would
+  // open a window on top of a row that works. Filtering in code rather than only in
+  // the defaults means a config written before this decision cannot reintroduce it.
+  assert.deepEqual(shimHosts(["claude", "codex"]), ["codex"]);
+  assert.deepEqual(shimHosts(["claude"]), [], "asking only for claude shims nothing");
+  assert.deepEqual(shimHosts(undefined), ["codex", "dsh-tui"]);
+  assert.equal(shimHosts(["claude", "codex", "dsh-tui"]).includes("claude"), false);
+});
 
 test("the block is fenced, so it can be found and removed exactly", () => {
   const block = buildShimBlock(OPTIONS);

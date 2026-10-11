@@ -10,7 +10,7 @@
 // until the plan for that host is known.
 
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,6 +27,7 @@ import {
   mergeConfig,
   profilePaths,
   removeBlock,
+  shimHosts,
 } from "../src/autostart.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -197,8 +198,18 @@ function dshInstall() {
   return 0;
 }
 
-function dshUninstall() {
-  if (!hasCommand("dsh")) return 1;
+function dshUninstall(installed) {
+  if (!hasCommand("dsh")) {
+    say("  the dsh command is not on PATH; nothing to remove here");
+    return 0;
+  }
+  // Uninstall now runs for every host, so "not installed" is the normal case rather
+  // than a failure — asking pnpm to remove a package that was never added would
+  // report a problem that is not one.
+  if (installed !== true) {
+    say(`  nothing of ours in profile "${DSH_PROFILE}"`);
+    return 0;
+  }
   if (dryRun) {
     say(`  would run: dsh plugin --profile ${DSH_PROFILE} remove dsh-budget-watcher`);
     return 0;
@@ -274,7 +285,7 @@ function writeClaudeCommand() {
  * package moves corrects the paths instead of stacking a second copy.
  */
 function autostartOn(config) {
-  const hosts = Array.isArray(config.hosts) && config.hosts.length > 0 ? config.hosts : DEFAULT_HOSTS;
+  const hosts = shimHosts(config.hosts);
   const block = buildShimBlock({ hosts, acmEntry: join(HERE, "acm.mjs"), nodePath: process.execPath });
   let written = 0;
   for (const path of profilePaths(homedir())) {
@@ -329,9 +340,83 @@ function autostartStatus(config) {
   return 0;
 }
 
+/**
+ * Undo everything acm wrote, in one command.
+ *
+ * A trail of edits across a settings file, two shell profiles, a slash-command
+ * directory and a cache is exactly what stops people installing something at all, so
+ * `uninstall` means *all of it* rather than whichever host happens to be the default.
+ * The package itself is the one thing acm cannot quietly delete from under its own
+ * feet, so it is printed, and `--self` does it anyway.
+ */
+function removeEverything({ self, keepCache }) {
+  let failures = 0;
+
+  say("\nauto-launch");
+  autostartOff();
+
+  say("\n/acm");
+  const commandFile = claudeCommandPath(homedir());
+  failures += removePath(commandFile, "file");
+
+  say("\nconfig");
+  failures += removePath(CONFIG_FILE, "file");
+
+  if (!keepCache) {
+    say("\npricing cache");
+    failures += removePath(PRICING_CACHE, "dir");
+  }
+
+  say("\nthe package itself");
+  if (self) {
+    if (dryRun) say("  would run: npm uninstall -g agent-cost-monitor");
+    else {
+      const removed = run("npm uninstall -g agent-cost-monitor", { inherit: true });
+      if (removed.status === 0) say("  removed the global package");
+      else {
+        say("  npm could not remove it; run it yourself: npm uninstall -g agent-cost-monitor");
+        failures += 1;
+      }
+    }
+  } else {
+    say("  still installed. Remove it with: npm uninstall -g agent-cost-monitor");
+    say("  (or re-run as `acm uninstall --self` and acm will do it)");
+  }
+  return failures;
+}
+
+/** Delete one path, reporting honestly whether there was anything to delete. */
+function removePath(path, kind) {
+  if (!existsSync(path)) {
+    say(`  nothing at ${path}`);
+    return 0;
+  }
+  if (dryRun) {
+    say(`  would remove ${path}`);
+    return 0;
+  }
+  try {
+    if (kind === "dir") rmSync(path, { recursive: true, force: true });
+    else unlinkSync(path);
+    say(`  removed   ${path}`);
+    return 0;
+  } catch (error) {
+    say(`  failed    ${path}: ${error.message}`);
+    return 1;
+  }
+}
+
 // --------------------------------------------------------------------- main ---
 
-const wants = (name) => hostArg === "all" || hostArg === name || (hostArg === "auto" && name === "claude");
+/**
+ * Which hosts a command applies to.
+ *
+ * Install is conservative — Claude Code by default, the one host every install can
+ * configure — but uninstall is total: "remove it all" has to mean all, or reversing
+ * an install becomes a list of flags to remember.
+ */
+const wants = (name) =>
+  hostArg === "all" || hostArg === name || (hostArg === "auto" && (command === "uninstall" ? true : name === "claude"));
 
 function main() {
   const hosts = { claude: detectClaude(), dsh: detectDsh(), codex: detectCodex() };
@@ -343,7 +428,9 @@ function main() {
     say("  acm launch [--quiet]       start the window now (what the shim and /acm call)");
     say("  acm autostart on|off|status  the shim that rides along with `claude` / `codex`");
     say("  acm status                 what is detected and configured");
-    say("  acm uninstall [--host h]   remove only what this installer added");
+    say("  acm uninstall              remove everything acm added to your machine");
+    say("                             (--self also uninstalls the npm package)");
+    say("                             (--keep-cache leaves the pricing cache)");
     say("  acm doctor                 check the pieces the status line needs\n");
     say("  --dry-run                  print the plan, change nothing");
     say("  --force                    replace a status line configured by something else");
@@ -362,7 +449,9 @@ function main() {
       say("auto-launch on");
       autostartOn(config);
       if (!dryRun) writeClaudeCommand();
-      say("\n  Typing `claude` or `codex` in PowerShell now brings the window up with it.");
+      const shimmed = shimHosts(config.hosts);
+      say(`\n  Typing ${shimmed.map((h) => `\`${h}\``).join(" or ")} in PowerShell now brings the window up with it.`);
+      say("  Claude Code is deliberately not wrapped — its own status line already shows these figures.");
       say("  Codex has no custom slash commands, so inside it use: !acm launch");
       return 0;
     }
@@ -399,7 +488,7 @@ function main() {
   if (wants("dsh")) {
     say("\ndsh-tui");
     if (!hosts.dsh.detected) say("  not detected; skipping");
-    else failures += command === "install" ? dshInstall() : dshUninstall();
+    else failures += command === "install" ? dshInstall() : dshUninstall(hosts.dsh.installed);
   }
   if (command === "install" && hostArg === "auto" && hosts.dsh.detected && !hosts.dsh.installed) {
     say(`\ndsh-tui is present but untouched. Add it with: acm install --host dsh`);
@@ -421,6 +510,10 @@ function main() {
     // `/acm` is written either way — with auto-launch off it is the whole mechanism,
     // and with it on it is the manual override.
     if (!dryRun) writeClaudeCommand();
+  }
+
+  if (command === "uninstall") {
+    failures += removeEverything({ self: flag("self"), keepCache: flag("keep-cache") });
   }
 
   say(failures === 0 ? "\ndone." : `\ndone, with ${failures} problem(s).`);

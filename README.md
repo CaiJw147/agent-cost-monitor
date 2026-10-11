@@ -74,14 +74,20 @@ done.
 
 ### Auto-launch
 
-After installing, **typing `claude` or `codex` in PowerShell starts the window as
+After installing, **typing `codex` or `dsh-tui` in PowerShell starts the window as
 well.** It rides along; you do not have to remember it.
+
+**Claude Code is deliberately not wrapped.** Its status line already shows these
+figures inside the tool, so a window on top of it would be noise. `codex` and
+`dsh-tui` have no such row — which is what the window is for. The filter lives in the
+code rather than only in the defaults, so a config written before that decision cannot
+bring it back.
 
 Neither harness offers a hook for "the CLI was started" — Codex's slash commands are a
 fixed registry, and Claude Code's `statusLine` is a rendering hook, not a lifecycle
 one — so `acm` writes a small **PowerShell function** into your profile. PowerShell
 resolves a function ahead of an external command, so the function starts the window
-and then hands over to the real `claude` with your arguments untouched. It is written
+and then hands over to the real command with your arguments untouched. It is written
 into **both** profile files, because PowerShell 5.1 and 7 keep separate ones.
 
 Every failure path falls through to running the real command: a spend window that will
@@ -98,26 +104,52 @@ not start must never stop your agent from starting.
 The switch is a file you can edit, `~/.agent-cost-monitor.json`:
 
 ```json
-{ "autoLaunch": true, "hosts": ["claude", "codex", "dsh-tui"], "backend": "browser" }
+{ "autoLaunch": true, "hosts": ["codex", "dsh-tui"], "backend": "browser" }
 ```
 
 A fresh install turns it on; a re-install **respects a deliberate `false`**, because
 someone who turned it off did so on purpose.
 
+### Uninstalling
+
+One command undoes all of it:
+
+```bash
+acm uninstall            # every host, both profiles, /acm, the config and the cache
+npm uninstall -g agent-cost-monitor   # and then the package
+```
+
+`acm uninstall --self` folds that second line in, and `--keep-cache` leaves the
+pricing cache (it refetches itself, so removing it is only tidiness). Uninstall is
+**total by design** — `--host` narrows it if you want that — because a trail of edits
+across a settings file, two shell profiles and a command directory is exactly what
+stops people installing something in the first place. Every settings write is preceded
+by a timestamped backup, so the file you had is always still on disk.
+
 ### Launching it from inside a harness
 
 - **Claude Code** — `/acm`. The installer writes `~/.claude/commands/acm.md`, so it
-  works whether or not auto-launch is on.
+  works whether or not auto-launch is on. (You rarely need it: the status line is
+  already in the tool.)
 - **Codex** — `!acm launch`. Codex has **no custom slash commands** (its registry is
   fixed: `/fork`, `/model`, `/statusline`, …), but it does have the `!` shell escape,
   so that is the equivalent. `acm` does not write a prompt file there, because it
   would sit there doing nothing.
 
+### A note on PATH
+
+`npm install -g agent-cost-monitor` puts `acm` on your PATH the same way it does for
+any global package with a `bin` field — you do not configure anything. If you are
+running from a checkout instead, `npm link` gives you the identical result against
+live code.
+
 | Command | What it does |
 |---|---|
 | `acm status` | What is detected, what is configured, and how old the pricing cache is |
-| `acm install [--host claude\|dsh\|all]` | Configure a host. Default: Claude Code. |
-| `acm uninstall [--host …]` | Remove only what this installer added |
+| `acm install [--host claude\|dsh\|all] [--no-autostart]` | Configure a host. Default: Claude Code. |
+| `acm uninstall [--host …] [--self] [--keep-cache]` | Remove everything acm added. Default: all of it. |
+| `acm launch [--quiet]` | Start the window now |
+| `acm autostart on\|off\|status` | The shim that rides along with `codex` / `dsh-tui` |
 | `acm doctor` | Check the pieces the status line needs |
 | `--dry-run` | Print the plan and change nothing |
 | `--force` | Replace a status line configured by something else |
