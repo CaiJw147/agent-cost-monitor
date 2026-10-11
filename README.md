@@ -241,6 +241,13 @@ It shows the host it is reading, the `turn / session · β(t) · β · clock` li
 **burn chart** — the windowed rate over time with the warn line across it, drawn the
 way the DSH panel draws it.
 
+**The dot** answers one question: are we spending faster than the warning rate? Green
+below `warnPerHour`, amber above it, red when nothing could be read. It is the same
+threshold the dashed line is drawn at, so the dot and the line cannot disagree about
+what "too fast" means. (It used to go amber on *any* spend at all, which lit it at a
+twelfth of the threshold and kept it lit until the rate fell to exactly zero — it read
+as a latch rather than as a level.)
+
 **There is no balance row, on purpose.** The balance is DeepSeek's and only DSH can
 read it, so in a window that also serves Codex and Claude Code it was a figure about a
 different provider than the one being measured — and one that would never move for two

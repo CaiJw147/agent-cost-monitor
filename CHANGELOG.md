@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-10-11
+
+### Fixed
+
+- **The status dot went amber on any spend at all, and stayed there.** It tested
+  `liveBurn > 0` rather than the warning rate, so it lit up at a fraction of the
+  threshold and only returned to green once the rate fell to exactly zero — which reads
+  as a latch, not as a level. Reported as "once the dot goes amber it doesn't come back
+  green though burn is lower than the warning value", and the live data showed it
+  precisely: **3.45/h against a 15/h threshold, displayed as amber**. It now compares
+  against the same `warnPerHour` the dashed line on the chart is drawn at, so the dot
+  and the line cannot disagree about what "too fast" means. Verified by evaluating both
+  rules against the same live payload: old `AMBER`, new `green`.
+
 ## [0.8.0] — 2026-10-11
 
 ### Changed

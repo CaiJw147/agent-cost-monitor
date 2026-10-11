@@ -127,7 +127,13 @@ function render(data) {
     return;
   }
 
-  $("dot").style.background = data.liveBurn > 0 ? "#d9a441" : "#3fb950";
+  // The dot answers one question: are we spending faster than the warning rate? It
+  // used to go amber on any spend at all (`liveBurn > 0`), which meant it lit up at a
+  // twelfth of the threshold and stayed lit — the rate had to fall to exactly zero
+  // before it went green again, so it read as a latch rather than as a level. The
+  // threshold is the same `warn` the dashed line on the chart is drawn at, so the dot
+  // and the line can never disagree about what "too fast" means.
+  $("dot").style.background = data.liveBurn > warn ? "#d9a441" : "#3fb950";
   // Name the host, and mention the alternatives only when one of them was actually
   // tried and failed — "only source needed" was accurate and read as noise.
   const failed = (data.attempts || []).filter((a) => a.source !== data.source && !a.ok);
