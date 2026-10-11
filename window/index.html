@@ -94,16 +94,29 @@ function chart(data) {
   </svg>`;
 }
 
+// One request at a time, scheduled by the previous one finishing.
+//
+// `setInterval(tick, 3000)` was wrong twice over: three seconds is a long time to watch
+// a spend meter, and when a request took longer than the interval — which is exactly
+// what a big transcript behind a slow tool call produces — the ticks overlapped and the
+// responses could land out of order, so the display jumped to a stale figure. Chaining
+// with setTimeout cannot overlap by construction, and the delay comes from the daemon's
+// own `pollMs` so the cadence is configurable in one place.
 async function tick() {
+  let delay = 1000;
   try {
     const host = new URLSearchParams(location.search).get("host") || "";
     const url = "/data" + (host ? "?host=" + encodeURIComponent(host) : "");
-    render(await (await fetch(url, { cache: "no-store" })).json());
+    const data = await (await fetch(url, { cache: "no-store" })).json();
+    render(data);
+    const asked = Number(data.pollMs);
+    if (Number.isFinite(asked) && asked >= 250) delay = asked;
   } catch (err) {
     // A widget that freezes silently is worse than one that says what broke.
     $("dot").style.background = "#d9534f";
     $("line").textContent = "window error: " + (err && err.message ? err.message : String(err));
   }
+  setTimeout(tick, delay);
 }
 
 const HOST_LABEL = { codex: "Codex", dsh: "dsh-tui", "claude-code": "Claude Code", claude: "Claude Code" };
@@ -158,7 +171,6 @@ function render(data) {
 }
 
 tick();
-setInterval(tick, 3000);
 </script>
 </body>
 </html>

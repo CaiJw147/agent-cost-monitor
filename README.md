@@ -371,6 +371,7 @@ those variables existed before the file did, and they are the per-invocation ove
 | `alwaysOnTop` | `true` | Keep it above other windows | `ACM_ALWAYS_ON_TOP=0` to disable |
 | `warnPerHour` | `15` | Where the dashed warn line sits on the chart | `ACM_WARN_PER_HOUR` |
 | `burnWindowMs` | `15000` | The window the live burn rate `β(t)` is measured over — 15 seconds. The same name and meaning as the DSH plugin's setting, so one idea has one name. Below 1000 it clamps, because a sub-second window reports whichever single call happened to land in it rather than a rate. | `ACM_BURN_WINDOW_MS` |
+| `pollMs` | `1000` | How often the window asks the daemon, in milliseconds. The page chains its next request off the previous one finishing, so a slow answer delays the next poll instead of stacking overlapping ones. Below 250 it clamps. | `ACM_POLL_MS` |
 | `port` | `7420` | The local daemon's port | `ACM_WINDOW_PORT` |
 
 A value that is zero, negative, or not a number falls back to the default rather than
@@ -409,6 +410,19 @@ And these it only **reads**:
 
 `acm uninstall` removes everything in the first table except the package itself
 (`--self` does that too).
+
+### What the chart's axis means
+
+The x-axis runs from the first settled point **to now**, not to the last settled point.
+That distinction is the whole difference between a chart that is idle and a chart that
+has stopped: while a long command runs, no new usage is recorded, so an axis ending at the
+last point would sit minutes in the past and read as frozen. A quiet stretch is now drawn
+as a quiet stretch, with the current (usually zero) rate at the right-hand edge.
+
+The **clock and `β`** work the same way. A turn whose transcript ends with a tool call
+whose result has not been written yet is *running*, however long that takes, so the clock
+advances and the average keeps being an average. Only a turn with nothing in flight is
+treated as ended (after 30 seconds), at which point the clock stops at the last activity.
 
 ## Known limitations
 

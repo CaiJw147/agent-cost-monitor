@@ -4,11 +4,51 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — 2026-10-11
+
+### Fixed
+
+- **The chart's x-axis ended at the last settled point instead of at now.** During a long
+  command no new usage is recorded, so the axis stopped minutes in the past — the reported
+  screenshot showed `00:19` as the right-hand label while the clock said `00:26`. A quiet
+  stretch now appears as a quiet stretch, with the current rate at the right edge. Verified
+  on that same session: last settled `00:28:55`, chart's end `00:29:32`, which is now.
+- **A turn with a tool call in flight was declared ended after 30 seconds.** That froze the
+  clock and zeroed `β(t)` in the middle of a running turn — reported as "freezes and reports
+  a wrong number when the agent is stuck on a time-demanding powershell command". Found by
+  probing the transcript: a PowerShell call ran `00:26:10 → 00:27:11`, so for 61 seconds the
+  newest usage-bearing entry was the message that *requested* the tool. `collectUnits` now
+  reports `awaitingToolResult`, and a turn waiting on a tool is running however long it takes.
+- **Overlapping polls could render a stale figure.** With `setInterval(tick, 3000)`, a request
+  slower than three seconds — exactly what a large transcript produces — let the next tick
+  start before the first answered, so responses could land out of order and the display
+  jumped backwards.
+
+### Changed
+
+- **The window updates once a second** (`pollMs`, default `1000`, `ACM_POLL_MS`), down from
+  every three. The page schedules its next request off the previous one *finishing* via
+  `setTimeout`, which cannot overlap by construction, and the interval comes from the daemon
+  so it is configured in one place.
+- **The figures arithmetic moved to `src/figures.mjs`.** It lived in `window/serve.mjs`, which
+  listens on import and therefore could not be tested — so the maths behind every headline
+  number had no test at all. It now has eight.
+- **The transcript search is remembered briefly** (2 s). At one request a second, rescanning
+  every candidate file to find the one with usage was wasted work; the figures themselves are
+  still recomputed on every request, so nothing shown is stale.
+
+### Notes
+
+- **The in-flight-tool detection is Claude Code only.** A Codex rollout's shapes for a pending
+  command have not been verified, so Codex still uses the 30-second idle rule. The axis fix
+  applies to both.
+- 79 tests, including eight for the figures module and six for the waiting flag.
+
 ## [0.9.1] — 2026-10-11
 
 ### Fixed
 
-- **cm launch --dry-run started a real window.** It printed the plan and spawned the
+- **`acm launch --dry-run started a real window.** It printed the plan and spawned the
   browser anyway, which matters more now that a hook runs this command: a flag that
   claims to change nothing must change nothing.
 

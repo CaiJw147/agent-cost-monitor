@@ -118,6 +118,16 @@ test("the burn window is configurable, and has a floor a rate cannot go below", 
   assert.equal(resolveConfig(homeWith({ burnWindowMs: "nonsense" }), {}).burnWindowMs, 15_000);
 });
 
+test("the poll interval is configurable, defaults to a second, and cannot be hammered", () => {
+  assert.equal(resolveConfig(homeWith({}), {}).pollMs, 1000, "updates per second, as asked");
+  assert.equal(resolveConfig(homeWith({ pollMs: 2500 }), {}).pollMs, 2500);
+  assert.equal(resolveConfig(homeWith({}), { ACM_POLL_MS: "500" }).pollMs, 500);
+  // Below a quarter second the daemon would be reading a transcript faster than a disk
+  // wants to serve one, for no visible gain.
+  assert.equal(resolveConfig(homeWith({ pollMs: 10 }), {}).pollMs, 250);
+  assert.equal(resolveConfig(homeWith({ pollMs: "soon" }), {}).pollMs, 1000);
+});
+
 test("the config file moves the window, and an env var beats the file", () => {
   const home = homeWith({ windowWidth: 520, windowHeight: 300, windowX: 900, windowY: 12, port: 7500 });
   const fromFile = resolveConfig(home, {});

@@ -92,6 +92,7 @@ export const DEFAULT_CONFIG = {
   windowY: 80,
   alwaysOnTop: true,
   burnWindowMs: 15_000,
+  pollMs: 1000,
   port: 7420,
 };
 
@@ -123,6 +124,8 @@ const positive = (value, fallback) => {
  * as a rate. A second is the floor; the DSH plugin uses five for the same setting.
  */
 const MIN_BURN_WINDOW_MS = 1000;
+/** Below this the window would be asking the daemon faster than it can read a transcript. */
+const MIN_POLL_MS = 250;
 
 /**
  * The whole precedence in one place: defaults, then the config file, then the
@@ -146,5 +149,6 @@ export function resolveConfig(home, env = process.env) {
     y: positive(env.ACM_WINDOW_Y, positive(merged.windowY, DEFAULT_CONFIG.windowY)),
     alwaysOnTop: env.ACM_ALWAYS_ON_TOP === undefined ? merged.alwaysOnTop !== false : env.ACM_ALWAYS_ON_TOP !== "0",
     burnWindowMs: Math.max(MIN_BURN_WINDOW_MS, burnWindow),
+    pollMs: Math.max(MIN_POLL_MS, positive(env.ACM_POLL_MS, positive(merged.pollMs, DEFAULT_CONFIG.pollMs))),
   };
 }

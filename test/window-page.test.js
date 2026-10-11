@@ -21,7 +21,9 @@ const SCRIPT = [...HTML.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[
  * The page's script, in a scope with just enough DOM to run.
  *
  * `fetch` never settles so the page's own polling `tick()` cannot land mid-test and
- * overwrite what an assertion is looking at; every render below is the test's.
+ * overwrite what an assertion is looking at; every render below is the test's. Timers
+ * are stubbed for the same reason in reverse: the page now schedules its next poll with
+ * `setTimeout`, and a real timer would keep the test process alive.
  */
 function loadPage() {
   const elements = new Map();
@@ -36,9 +38,10 @@ function loadPage() {
     "location",
     "fetch",
     "setInterval",
+    "setTimeout",
     `${SCRIPT}\nreturn { render, chart, money, clock };`,
   );
-  const page = factory(document, { search: "" }, () => new Promise(() => {}), () => 0);
+  const page = factory(document, { search: "" }, () => new Promise(() => {}), () => 0, () => 0);
   return { page, elements };
 }
 

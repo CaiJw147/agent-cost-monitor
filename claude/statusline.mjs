@@ -126,12 +126,16 @@ function refreshInBackground() {
  *
  * @param {string[]} raw transcript lines
  * @param {number} fallbackNow used when a timestamp will not parse
- * @returns {{units: object[], lastTurn: number}}
+ * @returns {{units: object[], lastTurn: number, awaitingToolResult: boolean}}
  */
 export function collectUnits(raw, fallbackNow = Date.now()) {
   const units = [];
   const seenIds = new Map();
   let turn = 0;
+  // True while the transcript ends with a tool call whose result has not been written.
+  // A long command is otherwise indistinguishable from an ended turn, and treating it as
+  // ended froze the clock and zeroed the live rate in the middle of a running turn.
+  let awaitingToolResult = false;
 
   for (const line of raw) {
     let entry;
@@ -142,11 +146,24 @@ export function collectUnits(raw, fallbackNow = Date.now()) {
     }
     const time = Number.isFinite(Date.parse(entry.timestamp)) ? Date.parse(entry.timestamp) : fallbackNow;
 
-    if (entry.type === "user" && entry.isSidechain !== true && isUserPrompt(entry)) {
-      turn += 1;
+    if (entry.type === "user") {
+      if (entry.isSidechain !== true && isUserPrompt(entry)) {
+        turn += 1;
+        awaitingToolResult = false;
+        continue;
+      }
+      // A tool result also arrives as a `user` entry. It closes the wait; it never opens
+      // a turn, or every tool call would read as a fresh one and the average would be
+      // nonsense.
+      if (hasBlock(entry, "tool_result")) awaitingToolResult = false;
       continue;
     }
     if (entry.type !== "assistant") continue;
+
+    // Set before the usage check: the entry that requests a tool is exactly the one that
+    // may carry no usage at all.
+    if (entry.isSidechain !== true) awaitingToolResult = hasBlock(entry, "tool_use");
+
     const usage = entry.message?.usage;
     if (usage === undefined || usage === null || typeof usage !== "object") continue;
 
@@ -181,7 +198,13 @@ export function collectUnits(raw, fallbackNow = Date.now()) {
     }
     units.push(unit);
   }
-  return { units, lastTurn: turn };
+  return { units, lastTurn: turn, awaitingToolResult };
+}
+
+/** Does this entry's content contain a block of the given type? */
+function hasBlock(entry, type) {
+  const content = entry.message?.content;
+  return Array.isArray(content) && content.some((block) => block?.type === type);
 }
 
 /** A tool result arrives as a `user` entry; only a real prompt opens a turn. */

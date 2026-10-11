@@ -20,11 +20,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { burnPerHour, usageCost } from "../lib/cost.js";
 import { createPriceBook } from "../lib/pricing.js";
 import { collectUnits } from "../claude/statusline.mjs";
 import { parseRollout, readNewestRollout, readThreadTotals } from "../src/codex.mjs";
 import { resolveConfig } from "../src/autostart.mjs";
+import { figuresFrom } from "../src/figures.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONFIG = resolveConfig(homedir());
@@ -39,6 +39,9 @@ const WARN = CONFIG.warnPerHour;
 
 const LOG_DIR = join(homedir(), ".cache", "agent-cost-monitor");
 const LOG_FILE = join(LOG_DIR, "window.log");
+
+/** The transcript chosen last time, so a 1 Hz poll does not rescan every request. */
+let claudePick = { path: "", at: 0 };
 
 /** Every resolution, so "why is it showing that" is answerable after the fact. */
 function log(message) {
@@ -73,69 +76,11 @@ function makeLookup() {
 }
 
 /**
- * The figures, from priced units. Shared by Codex and Claude Code, which is the
- * point: one engine, one shape of answer, two adapters.
+ * The figures, from priced units — now in src/figures.mjs, where it can be tested.
+ *
+ * It used to live here, and this file listens on import, so the arithmetic behind every
+ * headline number had no test at all.
  */
-function figuresFrom(units, { now, lookup, approximate = false, note = "" }) {
-  const price = (u) => usageCost(u.usage, u.model, u.time, CURRENCY, lookup);
-
-  const sorted = units.filter((u) => Number.isFinite(u.time)).sort((a, b) => a.time - b.time);
-  let sessionCost = 0;
-  let unpriced = 0;
-  let lastTurn = 0;
-  for (const u of sorted) {
-    const priced = price(u);
-    if (priced === undefined) unpriced += 1;
-    else sessionCost += priced.cost;
-    if (u.turn > lastTurn) lastTurn = u.turn;
-  }
-
-  // The chart is the windowed rate at each settled point, as the DSH panel's series
-  // is. A trailing window, not a running total: adding every call to one accumulator
-  // and never removing the ones that aged out made the line climb forever, which is
-  // both wrong and the opposite of what a burn rate is for. (Caught by reading an
-  // implausible axis label off a screenshot, not by a test.)
-  const costs = sorted.map((u) => price(u)?.cost ?? 0);
-  const series = [];
-  let windowCost = 0;
-  let start = 0;
-  for (let i = 0; i < sorted.length; i += 1) {
-    windowCost += costs[i];
-    while (sorted[start].time < sorted[i].time - BURN_WINDOW_MS) windowCost -= costs[start++];
-    series.push({ atMs: sorted[i].time, amountPerHour: burnPerHour(windowCost, BURN_WINDOW_MS) });
-  }
-
-  let turnCost = 0;
-  let turnStart = null;
-  let lastActivity = null;
-  for (const u of sorted) {
-    if (u.turn !== lastTurn) continue;
-    turnCost += price(u)?.cost ?? 0;
-    if (turnStart === null || u.time < turnStart) turnStart = u.time;
-    if (lastActivity === null || u.time > lastActivity) lastActivity = u.time;
-  }
-  const live = lastActivity !== null && now - lastActivity < IDLE_IS_ENDED_MS;
-  const elapsedMs = turnStart === null ? 0 : (live ? now : lastActivity) - turnStart;
-
-  return {
-    turnCost,
-    sessionCost,
-    // The headline rate is "now", not "at the last settled point": the series is
-    // history, but an idle session must read zero or it looks like it is still spending.
-    liveBurn: burnPerHour(
-      sorted.filter((u) => now - u.time <= BURN_WINDOW_MS).reduce((sum, u) => sum + (price(u)?.cost ?? 0), 0),
-      BURN_WINDOW_MS,
-    ),
-    averageBurn: elapsedMs > 0 ? burnPerHour(turnCost, elapsedMs) : 0,
-    elapsedMs,
-    turns: lastTurn,
-    models: [...new Set(sorted.map((u) => u.model).filter((m) => m !== ""))].slice(0, 4),
-    series: series.slice(-240),
-    unpriced,
-    approximate,
-    note,
-  };
-}
 
 // --------------------------------------------------------------- sources -----
 
@@ -165,6 +110,7 @@ async function fromDsh() {
       turns: session.turns ?? 0,
       models: turn.models ?? [],
       series: turn.series ?? [],
+      pollMs: CONFIG.pollMs,
       warnPerHour: cost.warnPerHour ?? WARN,
       unpriced: session.unpricedTurns ?? 0,
       approximate: false,
@@ -188,7 +134,8 @@ async function fromCodex(now, lookup) {
         sourceDetail: `${where} \u00b7 cli ${parsed.cliVersion || "?"} \u00b7 ${parsed.provider || "?"}`,
         currency: CURRENCY,
         symbol: SYMBOL,
-        ...figuresFrom(parsed.units, { now, lookup }),
+        ...figuresFrom(parsed.units, { now, currency: CURRENCY, lookup, burnWindowMs: BURN_WINDOW_MS }),
+        pollMs: CONFIG.pollMs,
         warnPerHour: WARN,
       },
     };
@@ -212,8 +159,16 @@ async function fromCodex(now, lookup) {
       symbol: SYMBOL,
       ...figuresFrom(
         [{ turn: 1, time: now, model: match.model, usage: { inputTokens: match.tokensUsed, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 } }],
-        { now, lookup, approximate: true, note: `${match.tokensUsed.toLocaleString()} tokens priced as uncached input \u2014 the cache split was not recorded` },
+        {
+          now,
+          currency: CURRENCY,
+          lookup,
+          burnWindowMs: BURN_WINDOW_MS,
+          approximate: true,
+          note: `${match.tokensUsed.toLocaleString()} tokens priced as uncached input \u2014 the cache split was not recorded`,
+        },
       ),
+      pollMs: CONFIG.pollMs,
       warnPerHour: WARN,
     },
   };
@@ -221,6 +176,14 @@ async function fromCodex(now, lookup) {
 
 function fromClaudeCode(now, lookup) {
   const root = join(homedir(), ".claude", "projects");
+  // Which transcript to read is the expensive part — the scan reads candidate files
+  // until one has usage. At one request a second that is worth remembering briefly; the
+  // figures themselves are recomputed every time, so nothing shown is stale.
+  if (claudePick.path !== "" && now - claudePick.at < 2000 && existsSync(claudePick.path)) {
+    const picked = readClaudeTranscript(claudePick.path, now, lookup);
+    if (picked !== undefined) return picked;
+  }
+
   const found = [];
   (function walk(dir, depth = 0) {
     if (depth > 5) return;
@@ -239,28 +202,37 @@ function fromClaudeCode(now, lookup) {
   found.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
   for (const { full } of found.slice(0, 12)) {
-    try {
-      const text = readFileSync(full, "utf8");
-      if (!text.includes('"input_tokens"')) continue;
-      const { units } = collectUnits(text.split("\n").filter(Boolean));
-      if (units.length === 0) continue;
-      return {
-        ok: true,
-        payload: {
-          state: "ok",
-          source: "claude-code",
-          sourceDetail: full.split(/[\\/]/).slice(-1)[0],
-          currency: CURRENCY,
-          symbol: SYMBOL,
-          ...figuresFrom(units, { now, lookup }),
-          warnPerHour: WARN,
-        },
-      };
-    } catch {
-      /* try the next transcript */
+    const picked = readClaudeTranscript(full, now, lookup);
+    if (picked !== undefined) {
+      claudePick = { path: full, at: now };
+      return picked;
     }
   }
   return { ok: false, reason: "no Claude Code transcript with usage found" };
+}
+
+function readClaudeTranscript(full, now, lookup) {
+  try {
+    const text = readFileSync(full, "utf8");
+    if (!text.includes('"input_tokens"')) return undefined;
+    const { units, awaitingToolResult } = collectUnits(text.split("\n").filter(Boolean));
+    if (units.length === 0) return undefined;
+    return {
+      ok: true,
+      payload: {
+        state: "ok",
+        source: "claude-code",
+        sourceDetail: full.split(/[\\/]/).slice(-1)[0],
+        currency: CURRENCY,
+        symbol: SYMBOL,
+        ...figuresFrom(units, { now, currency: CURRENCY, lookup, burnWindowMs: BURN_WINDOW_MS, awaiting: awaitingToolResult }),
+        pollMs: CONFIG.pollMs,
+        warnPerHour: WARN,
+      },
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 const SOURCES = { dsh: fromDsh, codex: fromCodex, claude: fromClaudeCode, "claude-code": fromClaudeCode };
@@ -291,6 +263,7 @@ async function resolveData(prefer, now, lookup) {
     requested: wanted || "auto",
     currency: CURRENCY,
     symbol: SYMBOL,
+    pollMs: CONFIG.pollMs,
     attempts,
     hint: "nothing to read yet \u2014 run Codex, start dsh-tui, or use Claude Code",
   };
