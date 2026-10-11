@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] — 2026-10-11
+
+### Fixed
+
+- **cm launch --dry-run started a real window.** It printed the plan and spawned the
+  browser anyway, which matters more now that a hook runs this command: a flag that
+  claims to change nothing must change nothing.
+
 ## [0.9.0] — 2026-10-11
 
 ### Added

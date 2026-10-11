@@ -363,6 +363,12 @@ function launch({ quiet }) {
     return 1;
   }
   const host = option("host") ?? "";
+  // `--dry-run` has to mean it here too: the hook runs this command, and a flag that
+  // prints a plan while starting a real browser window is worse than no flag.
+  if (dryRun) {
+    say(`  would start the window at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}`);
+    return 0;
+  }
   // Detached and unref'd: a GUI process must never hold this one open, and the window
   // takes long enough to start that waiting on it would be felt.
   spawn(process.execPath, [LAUNCH_SCRIPT, ...(host === "" ? [] : ["--host", host])], { detached: true, stdio: "ignore" }).unref();
