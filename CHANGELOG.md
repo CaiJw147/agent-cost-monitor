@@ -4,6 +4,50 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-10-11
+
+### Added
+
+- **`acm hook on|off|status [--host claude|codex|all]` — a `SessionStart` hook that
+  opens the window with the session.** Both harnesses turned out to expose the same
+  extension point under the same event name, and both were already using it on this
+  machine: a4phone writes `[[hooks.Stop]]` into `~/.codex/config.toml`, and Claude Code's
+  `~/.claude/settings.json` already carries three hooks. So this is configuration rather
+  than a new mechanism, and it is the *right* mechanism — unlike the withdrawn shell
+  shim, it fires on the event rather than on a command name and needs no shell-profile
+  edits. Claude Code gets `hooks.SessionStart` with `matcher: "startup"` (a resume or a
+  compact is not a new session); Codex gets a fenced `[[hooks.SessionStart]]` block.
+
+### Verified
+
+- **`codex doctor` accepts the edited config** (`config loaded`) — the TOML is valid,
+  which is the one thing that had to be true and cannot be assumed from text editing.
+- **Install then remove restores `~/.codex/config.toml` and `~/.claude/settings.json`
+  byte for byte**, checked by SHA-256 against copies of the real files.
+- **a4phone's three hooks survive** an install and a removal, and Claude Code's `hooks`
+  object is not deleted while another tool still uses it.
+- Idempotent (a second `acm hook on` reports "already installed" and writes nothing),
+  and changing `--host` corrects the block instead of stacking a second one.
+- 18 planner tests, including the trap that matters most: **TOML forbids redefining a
+  table**, so appending a second `[features]` to a config that already has one would make
+  the whole file unparseable and break the user's Codex. An existing `[features]` gets
+  the key inserted into its body; only a missing one is appended. A first attempt also
+  stripped trailing whitespace on install and collapsed blank-line runs on removal, which
+  restored the real config only *approximately* — the round trip is now exact, with the
+  CRLF and blank-line-run cases in the tests because the tidy synthetic file hid it.
+
+### Notes
+
+- **Codex will not run a hook it has not been told to trust.** Its config records a
+  `trusted_hash` per hook under `[hooks.state]`, so the first session after installing
+  may ask you to approve it once. That hash cannot be forged, and this does not try.
+- **Removal leaves `features.hooks = true` in place**, on purpose: another tool may rely
+  on the flag, and a flag that is on when it need not be is harmless where a missing one
+  makes the hook silently dead.
+- **The Claude Code side is untested end to end**, because no Claude Code desktop app is
+  installed here — only `~/.claude` from the CLI. The Codex side was exercised against
+  the real config file.
+
 ## [0.8.2] — 2026-10-11
 
 ### Fixed

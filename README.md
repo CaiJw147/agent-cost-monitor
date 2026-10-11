@@ -96,6 +96,41 @@ If a machine still carries the old shim, `acm clean-profiles` removes it, and
 The window's size, position, transparency to clicks and warn line all come from
 `~/.agent-cost-monitor.json` — see **[Configuration](#configuration)** below.
 
+### Starting the window with a hook
+
+Both harnesses expose the same extension point — a `SessionStart` hook — so the window
+can come up with the session instead of being asked for:
+
+```bash
+acm hook on                # both hosts whose config exists
+acm hook on --host codex   # just Codex
+acm hook status
+acm hook off
+```
+
+| Host | What is written |
+|---|---|
+| **Claude Code** | `~/.claude/settings.json` → `hooks.SessionStart`, `matcher: "startup"` — a resume or a compact is not a new session, and starting a second window for one would be noise |
+| **Codex** | `~/.codex/config.toml` → a fenced `[[hooks.SessionStart]]` block, plus `features.hooks = true` if the file does not already enable it |
+
+Both are fenced, idempotent and removable: `acm hook off` restores the file **byte for
+byte** (verified by SHA-256 against copies of the real configs), and `acm uninstall`
+removes the hooks as part of removing everything. Every write is preceded by a
+timestamped `.bak-` copy.
+
+Two things to expect:
+
+- **Codex asks you to trust the hook once.** Its config records a `trusted_hash` per
+  hook under `[hooks.state]`; a freshly written hook is not trusted yet, so the first
+  session may prompt. That hash cannot be forged and this does not try.
+- **`features.hooks = true` stays after `acm hook off`.** Another tool may rely on the
+  flag, and a flag that is on when it need not be is harmless, where a missing one makes
+  the hook silently dead.
+
+This is not the auto-launch that was withdrawn. That wrapped `codex` and `dsh-tui` in
+PowerShell functions, which meant editing two shell profiles to save one command; a
+`SessionStart` hook fires on the event and touches nothing but the harness's own config.
+
 ### Uninstalling
 
 One command undoes all of it:
@@ -303,6 +338,7 @@ worth knowing:
 | `acm log [--lines N]` | The last N lines of the window log (default 40) |
 | `acm uninstall [--host …] [--self] [--keep-cache]` | Remove everything acm added. Total by default. |
 | `acm clean-profiles` | Remove an old auto-launch block, if a previous version left one |
+| `acm hook on\|off\|status [--host claude\|codex\|all]` | A `SessionStart` hook that opens the window with the session |
 | `--dry-run` / `--force` | Print the plan and change nothing / replace a status line configured by something else |
 
 As npm scripts: `npm run window`, `npm run window:tauri`, `npm test`.
@@ -418,6 +454,19 @@ And these it only **reads**:
     rendering are still only verifiable by looking at the window**, and a screenshot is
     not conclusive either, because the window can be on a virtual desktop the capture
     cannot see.
+11. **Windows only, for now.** The status line, the daemon and the Codex adapter are pure
+    Node and would run anywhere, and `acm install` writes `node "<posix path>"` into
+    `settings.json` for exactly that reason. The *window* is not portable as it stands:
+    the browser list is four `C:/Program Files/...` paths, the placement step returns
+    immediately off Windows (so no pinning), and the Tauri artifact is a `.exe`. macOS
+    would need the `/Applications` browser paths, a platform branch for placement, and
+    `app`/`dmg` bundle targets. This is a code reading, not a test — there is no macOS
+    machine here to run it on.
+12. **The hook is verified on Codex, not on Claude Code desktop.** No Claude Code desktop
+    app is installed on the machine this was built on, so the Claude Code side is
+    verified only as file editing (schema, preservation of other hooks, byte-exact
+    removal) and not as a hook that actually fires. Codex's hook was exercised against the
+    real `config.toml`, and `codex doctor` accepts the result.
 
 ## Hosts
 

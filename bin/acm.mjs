@@ -26,12 +26,21 @@ import {
   removeBlock,
   resolveConfig,
 } from "../src/autostart.mjs";
+import {
+  CODEX_TRUST_NOTE,
+  planClaudeHookInstall,
+  planClaudeHookRemove,
+  planCodexHookInstall,
+  planCodexHookRemove,
+} from "../src/hooks.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, "..");
 const STATUSLINE = join(PACKAGE_ROOT, "claude", "statusline.mjs");
 const CACHE_DIR = join(homedir(), ".cache", "agent-cost-monitor");
 const PRICING_CACHE = process.env.SPEND_WATCH_CACHE ?? join(homedir(), ".cache", "spend-watch");
+const CLAUDE_SETTINGS = join(homedir(), ".claude", "settings.json");
+const CODEX_CONFIG = join(homedir(), ".codex", "config.toml");
 
 const DSH_PROFILE = process.env.ACM_DSH_PROFILE ?? "dsh-tui";
 const PLUGIN_REPO = process.env.ACM_PLUGIN_REPO ?? "https://github.com/NeutronStar714/dsh-budget-watcher";
@@ -120,6 +129,106 @@ function writeSettings(path, settings) {
     say(`  backed up to ${path}.bak-${stamp}`);
   }
   writeFileSync(path, JSON.stringify(settings, null, 2) + "\n");
+}
+
+/** Any file acm edits gets a timestamped copy first — config.toml as much as settings.json. */
+function withBackup(path, write) {
+  mkdirSync(dirname(path), { recursive: true });
+  if (existsSync(path)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    copyFileSync(path, `${path}.bak-${stamp}`);
+    say(`  backed up to ${path}.bak-${stamp}`);
+  }
+  write();
+}
+
+// ------------------------------------------------------------------ hooks ---
+
+/**
+ * A `SessionStart` hook, so the window comes up with the session.
+ *
+ * This is the extension point both harnesses now offer, and it is the right one: unlike
+ * the withdrawn shell shim, it needs no edits to a shell profile and it fires on the
+ * event rather than on a command name.
+ */
+function hookClaude(mode) {
+  let settings;
+  try {
+    settings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"));
+  } catch (error) {
+    say(`  skipped: ${CLAUDE_SETTINGS} ${existsSync(CLAUDE_SETTINGS) ? "does not parse" : "does not exist"} (${error.code ?? error.message})`);
+    return 1;
+  }
+  const planned = mode === "on" ? planClaudeHookInstall(settings, "claude") : planClaudeHookRemove(settings);
+  if (!planned.changed) {
+    say(mode === "on" ? "  already installed" : "  not installed");
+    return 0;
+  }
+  if (dryRun) {
+    say(`  would ${mode === "on" ? "add" : "remove"} hooks.SessionStart in ${CLAUDE_SETTINGS}`);
+    return 0;
+  }
+  withBackup(CLAUDE_SETTINGS, () => writeFileSync(CLAUDE_SETTINGS, JSON.stringify(planned.settings, null, 2) + "\n"));
+  say(`  ${mode === "on" ? "installed" : "removed"}  hooks.SessionStart (startup) in ${CLAUDE_SETTINGS}`);
+  return 0;
+}
+
+function hookCodex(mode) {
+  if (!existsSync(CODEX_CONFIG)) {
+    say(`  skipped: ${CODEX_CONFIG} does not exist`);
+    return 1;
+  }
+  const text = readFileSync(CODEX_CONFIG, "utf8");
+  const planned = mode === "on" ? planCodexHookInstall(text, "codex") : planCodexHookRemove(text);
+  if (!planned.changed) {
+    say(mode === "on" ? "  already installed" : "  not installed");
+    return 0;
+  }
+  if (dryRun) {
+    say(`  would ${mode === "on" ? "add" : "remove"} the SessionStart block in ${CODEX_CONFIG}`);
+    return 0;
+  }
+  withBackup(CODEX_CONFIG, () => writeFileSync(CODEX_CONFIG, planned.text));
+  say(`  ${mode === "on" ? "installed" : "removed"}  [[hooks.SessionStart]] in ${CODEX_CONFIG}`);
+  if (mode === "on") say(`  note: ${CODEX_TRUST_NOTE}`);
+  return 0;
+}
+
+function hookStatus() {
+  let claude = "no settings file";
+  try {
+    const settings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"));
+    claude = (settings.hooks?.SessionStart ?? []).some((e) => (e.hooks ?? []).some((h) => String(h.command ?? "").includes("acm launch")))
+      ? "installed"
+      : "not installed";
+  } catch {
+    /* leave the message above */
+  }
+  let codex = "no config.toml";
+  try {
+    codex = hasBlock(readFileSync(CODEX_CONFIG, "utf8")) ? "installed" : "not installed";
+  } catch {
+    /* leave the message above */
+  }
+  say(`  claude code  ${claude}  ${CLAUDE_SETTINGS}`);
+  say(`  codex        ${codex}  ${CODEX_CONFIG}`);
+  say("  The window starts on SessionStart, so `acm launch` stays available by hand too.");
+  return 0;
+}
+
+function runHookCommand(mode) {
+  const scopes = hostArg === "all" || hostArg === "auto" ? ["claude", "codex"] : [hostArg];
+  if (mode === "status") return hookStatus();
+  let failures = 0;
+  for (const scope of scopes) {
+    if (scope === "claude") failures += hookClaude(mode);
+    else if (scope === "codex") failures += hookCodex(mode);
+    else {
+      say(`  unknown host "${scope}" (use claude, codex or all)`);
+      failures += 1;
+    }
+  }
+  return failures;
 }
 
 function claudeInstall(claude) {
@@ -313,6 +422,9 @@ function removeShimBlock() {
 function removeEverything({ self, keepCache }) {
   let failures = 0;
 
+  say("\nsession-start hooks");
+  runHookCommand("off");
+
   say("\nold auto-launch block");
   removeShimBlock();
 
@@ -391,6 +503,8 @@ function main() {
     say("                             (--self also uninstalls the npm package)");
     say("                             (--keep-cache leaves the pricing cache)");
     say("  acm clean-profiles         remove an old auto-launch block, if you have one");
+    say("  acm hook on|off|status     a SessionStart hook that opens the window");
+    say("    [--host claude|codex|all]  (default: both, when their config exists)");
     say("  acm doctor                 check the pieces the status line needs\n");
     say("  --dry-run                  print the plan, change nothing");
     say("  --force                    replace a status line configured by something else");
@@ -403,6 +517,12 @@ function main() {
     say("old auto-launch block");
     removeShimBlock();
     return 0;
+  }
+
+  if (command === "hook") {
+    const mode = argv.find((a) => ["on", "off", "status"].includes(a)) ?? "status";
+    if (mode !== "status") say(`hook ${mode}${dryRun ? " (dry run)" : ""}`);
+    return runHookCommand(mode) === 0 ? 0 : 1;
   }
 
   if (command === "doctor") {
