@@ -15,13 +15,26 @@ fn main() {
                 .parse()
                 .expect("ACM_WINDOW_PORT produced an unusable address");
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::External(address))
+            // A widget that panics with "os error 5" tells the user nothing. In a
+            // context with no interactive desktop — a service, an SSH session, a
+            // background job — creating the webview is refused by Windows, and that
+            // is worth saying in words rather than in a Rust backtrace.
+            if let Err(error) = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(address))
                 .title("agent-cost-monitor")
                 .inner_size(380.0, 600.0)
                 .min_inner_size(300.0, 260.0)
                 .always_on_top(true)
                 .resizable(true)
-                .build()?;
+                .build()
+            {
+                eprintln!(
+                    "agent-cost-monitor: could not create the window: {error}\n\
+                     This needs an interactive desktop session with the WebView2 runtime.\n\
+                     Launched from a service, an SSH session or a background job, Windows\n\
+                     refuses the window (reported as 'access denied', os error 5)."
+                );
+                std::process::exit(2);
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
