@@ -127,6 +127,10 @@ function render(data) {
     return;
   }
 
+  // The threshold is read here, in this function's scope. It already existed inside
+  // `chart()` for the dashed line, and reading that one from here threw
+  // "warn is not defined" — the window showed the error instead of any figures.
+  const warn = Number(data.warnPerHour) || 0;
   // The dot answers one question: are we spending faster than the warning rate? It
   // used to go amber on any spend at all (`liveBurn > 0`), which meant it lit up at a
   // twelfth of the threshold and stayed lit — the rate had to fall to exactly zero

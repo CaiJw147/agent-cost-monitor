@@ -411,6 +411,13 @@ And these it only **reads**:
    just after its previous window was closed — can exceed that on a loaded machine. The
    log records `window not found within 90s`, and the window then appears at the
    browser's own size in the browser's own position. Relaunching places it correctly.
+10. **The page is one HTML file with inline JavaScript, so nothing ran it until now.**
+    `test/window-page.test.js` extracts the script and executes it against a stub DOM,
+    which catches scope and logic errors — the `warn is not defined` that shipped in
+    0.8.1 failed six of those assertions. It is not a browser, though: **layout, CSS and
+    rendering are still only verifiable by looking at the window**, and a screenshot is
+    not conclusive either, because the window can be on a virtual desktop the capture
+    cannot see.
 
 ## Hosts
 

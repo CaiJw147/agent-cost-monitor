@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — 2026-10-11
+
+### Fixed
+
+- **`warn is not defined` — the window showed an error instead of any figures.**
+  Shipped in 0.8.1 by me. The dot fix read `warn`, which is declared inside `chart()`,
+  from `render()` — a scope error, not arithmetic. Only the no-data path worked, which
+  is why it looked like a Codex-specific failure. The threshold is now read in
+  `render()`'s own scope.
+- **Nothing ever ran the page's script.** The window is one HTML file with inline
+  JavaScript, so the build and the entire test suite could not see a runtime error in
+  it. The 0.8.1 release was "verified" by reading the served HTML and comparing the
+  expression's text — which was correct, and did not matter, because reading source is
+  not running it. `test/window-page.test.js` now extracts that script and executes it
+  against a stub DOM: ten assertions covering the dot threshold in both directions, the
+  threshold coming from the payload rather than a constant, the named host, the spend
+  line's five fields, the no-data path with its reasons, the approximation label, and
+  the chart with an empty series. Against the broken page, six of them fail with
+  `ReferenceError: warn is not defined` — checked before applying the fix, so the test
+  is known to have teeth rather than assumed to.
+
 ## [0.8.1] — 2026-10-11
 
 ### Fixed
