@@ -15,15 +15,26 @@ fn main() {
                 .parse()
                 .expect("ACM_WINDOW_PORT produced an unusable address");
 
+            // Geometry comes from the launcher, which reads the config file. Parsing that
+            // file here as well would mean two readers of one format; the launcher already
+            // has to know where the window goes, so it passes the answer down.
+            let number = |name: &str, fallback: f64| -> f64 {
+                std::env::var(name).ok().and_then(|value| value.parse::<f64>().ok()).unwrap_or(fallback)
+            };
+            let (width, height) = (number("ACM_WINDOW_WIDTH", 380.0), number("ACM_WINDOW_HEIGHT", 600.0));
+            let (x, y) = (number("ACM_WINDOW_X", 40.0), number("ACM_WINDOW_Y", 80.0));
+            let on_top = std::env::var("ACM_ALWAYS_ON_TOP").map(|value| value != "0").unwrap_or(true);
+
             // A widget that panics with "os error 5" tells the user nothing. In a
             // context with no interactive desktop — a service, an SSH session, a
             // background job — creating the webview is refused by Windows, and that
             // is worth saying in words rather than in a Rust backtrace.
             if let Err(error) = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(address))
                 .title("agent-cost-monitor")
-                .inner_size(380.0, 600.0)
-                .min_inner_size(300.0, 260.0)
-                .always_on_top(true)
+                .inner_size(width, height)
+                .position(x, y)
+                .min_inner_size(300.0, 220.0)
+                .always_on_top(on_top)
                 .resizable(true)
                 .build()
             {

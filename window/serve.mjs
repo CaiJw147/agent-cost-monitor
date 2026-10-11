@@ -15,7 +15,7 @@
 // a shared library.
 
 import { createServer } from "node:http";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,16 +24,32 @@ import { burnPerHour, usageCost } from "../lib/cost.js";
 import { createPriceBook } from "../lib/pricing.js";
 import { collectUnits } from "../claude/statusline.mjs";
 import { parseRollout, readNewestRollout, readThreadTotals } from "../src/codex.mjs";
+import { resolveConfig } from "../src/autostart.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.ACM_WINDOW_PORT ?? 7420);
-const CURRENCY = (process.env.SPEND_WATCH_CURRENCY ?? "CNY").toUpperCase() === "USD" ? "USD" : "CNY";
+const CONFIG = resolveConfig(homedir());
+const PORT = CONFIG.port;
+const CURRENCY = CONFIG.currency;
 const SYMBOL = CURRENCY === "USD" ? "$" : "\u00a5";
 const BURN_WINDOW_MS = 15_000;
 const IDLE_IS_ENDED_MS = 30_000;
 const CACHE = process.env.SPEND_WATCH_CACHE ?? join(homedir(), ".cache", "spend-watch");
 const DSH_URL = process.env.ACM_DSH_URL ?? "http://127.0.0.1:19387/dsh-budget-watcher/balance";
-const WARN = Number(process.env.ACM_WARN_PER_HOUR ?? 15);
+const WARN = CONFIG.warnPerHour;
+
+const LOG_DIR = join(homedir(), ".cache", "agent-cost-monitor");
+const LOG_FILE = join(LOG_DIR, "window.log");
+
+/** Every resolution, so "why is it showing that" is answerable after the fact. */
+function log(message) {
+  try {
+    mkdirSync(LOG_DIR, { recursive: true });
+    if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > 256 * 1024) writeFileSync(LOG_FILE, "");
+    appendFileSync(LOG_FILE, `${new Date().toISOString()}  daemon  ${message}\n`);
+  } catch {
+    /* a log that cannot be written is not a reason to fail a request */
+  }
+}
 
 const json = (res, body, status = 200) => {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
@@ -287,8 +303,15 @@ createServer(async (req, res) => {
     const lookup = makeLookup();
     const prefer = (url.searchParams.get("host") ?? process.env.ACM_PREFER_HOST ?? "").trim().toLowerCase();
     try {
-      return json(res, await resolveData(prefer, now, lookup));
+      const data = await resolveData(prefer, now, lookup);
+      log(
+        data.state === "ok"
+          ? `host=${prefer || "auto"} -> ${data.source} (${data.models.join(",") || "no model"})`
+          : `host=${prefer || "auto"} -> ${data.state}: ` + (data.attempts ?? []).map((a) => `${a.source}=${a.ok ? "ok" : a.reason}`).join("; "),
+      );
+      return json(res, data);
     } catch (error) {
+      log(`host=${prefer || "auto"} -> error: ${String(error?.message ?? error)}`);
       return json(res, { state: "error", hint: String(error?.message ?? error) });
     }
   }
@@ -298,5 +321,6 @@ createServer(async (req, res) => {
   }
   json(res, { error: "not found" }, 404);
 }).listen(PORT, "127.0.0.1", () => {
+  log(`listening on ${PORT}, currency ${CURRENCY}, warn ${WARN}/h`);
   process.stdout.write(`agent-cost-monitor window on http://127.0.0.1:${PORT}\n`);
 });

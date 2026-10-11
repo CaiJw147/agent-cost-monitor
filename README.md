@@ -93,14 +93,8 @@ showing nothing.
 If a machine still carries the old shim, `acm clean-profiles` removes it, and
 `acm uninstall` does the same as part of removing everything.
 
-The configuration file is `~/.agent-cost-monitor.json`:
-
-```json
-{ "backend": "browser", "warnPerHour": 15 }
-```
-
-`warnPerHour` moves the dashed warn line on the chart. `backend` is `browser` or
-`tauri`, and `SPEND_WATCH_CURRENCY=USD` switches to dollars.
+The window's size, position, transparency to clicks and warn line all come from
+`~/.agent-cost-monitor.json` — see **[Configuration](#configuration)** below.
 
 ### Uninstalling
 
@@ -285,6 +279,89 @@ worth knowing:
   happens the window falls back to `threads.tokens_used` and labels the figure `≈`,
   because only the uncached price can be applied to a total with no cache split — which
   overstates rather than understates, the safe direction for a spend warning.
+
+## Configuration
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `acm install [--host claude\|dsh\|all]` | Configure a host. Default: Claude Code. |
+| `acm launch [--host h] [--quiet]` | Start the window now. `--host codex` points it at Codex. |
+| `acm status` | What is detected, what is configured, how old the pricing cache is |
+| `acm doctor` | Node, the status script, git, dsh, the resolved window geometry, and the paths of both files below |
+| `acm log [--lines N]` | The last N lines of the window log (default 40) |
+| `acm uninstall [--host …] [--self] [--keep-cache]` | Remove everything acm added. Total by default. |
+| `acm clean-profiles` | Remove an old auto-launch block, if a previous version left one |
+| `--dry-run` / `--force` | Print the plan and change nothing / replace a status line configured by something else |
+
+As npm scripts: `npm run window`, `npm run window:tauri`, `npm test`.
+
+### `~/.agent-cost-monitor.json`
+
+Every value can also be set by environment variable, and the environment wins —
+those variables existed before the file did, and they are the per-invocation override.
+
+```json
+{
+  "backend": "browser",
+  "warnPerHour": 15,
+  "windowWidth": 380,
+  "windowHeight": 600,
+  "windowX": 40,
+  "windowY": 80,
+  "alwaysOnTop": true,
+  "port": 7420
+}
+```
+
+| Key | Default | Meaning | Env override |
+|---|---|---|---|
+| `backend` | `browser` | `browser` for an Edge/Chrome app window, `tauri` for the real widget | `ACM_WINDOW_BACKEND` |
+| `windowWidth` | `380` | Window width in pixels | `ACM_WINDOW_WIDTH` |
+| `windowHeight` | `600` | Window height in pixels | `ACM_WINDOW_HEIGHT` |
+| `windowX` | `40` | Left edge, screen pixels | `ACM_WINDOW_X` |
+| `windowY` | `80` | Top edge, screen pixels | `ACM_WINDOW_Y` |
+| `alwaysOnTop` | `true` | Keep it above other windows | `ACM_ALWAYS_ON_TOP=0` to disable |
+| `warnPerHour` | `15` | Where the dashed warn line sits on the chart | `ACM_WARN_PER_HOUR` |
+| `port` | `7420` | The local daemon's port | `ACM_WINDOW_PORT` |
+
+A value that is zero, negative, or not a number falls back to the default rather than
+producing a window that cannot be seen. A corrupt config file is ignored, not obeyed.
+
+Other environment variables, which have no config-file equivalent:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SPEND_WATCH_CURRENCY` | `CNY` | `USD` to price in dollars |
+| `SPEND_WATCH_CACHE` | `~/.cache/spend-watch` | Where the pricing cache lives |
+| `ACM_DSH_URL` | `http://127.0.0.1:19387/dsh-budget-watcher/balance` | The DSH plugin's route |
+| `ACM_DSH_PROFILE` | `dsh-tui` | Which DSH profile the plugin is installed into |
+| `ACM_PLUGIN_DIR` | — | A local dsh-budget-watcher checkout, instead of cloning one |
+
+### Where things live
+
+Nothing is sent anywhere. These are the only paths acm writes:
+
+| Path | What it is |
+|---|---|
+| `~/.agent-cost-monitor.json` | the configuration above |
+| `~/.cache/agent-cost-monitor/window.log` | **the log.** Every launch, its geometry, every source resolution (`host=codex -> codex (gpt-6-sol)`) and every failure reason. Truncated once it passes 256 KB. Read it with `acm log`. |
+| `~/.cache/spend-watch/claude-pricing.json` | the fetched model list and the ECB rate, with a 24-hour TTL. The only thing that ever leaves the machine, and only these two public endpoints. |
+| `~/.claude/settings.json` | the `statusLine` entry. Every write is preceded by a `settings.json.bak-<timestamp>` copy. |
+| `~/.claude/commands/acm.md` | the `/acm` slash command |
+| `~/.dsh/profiles/<profile>/` | the dsh-budget-watcher plugin, if you installed it with `--host dsh` |
+
+And these it only **reads**:
+
+| Path | For |
+|---|---|
+| `~/.claude/projects/**/*.jsonl` | Claude Code transcripts |
+| `~/.codex/sessions/**/rollout-*.jsonl` | Codex rollouts |
+| `~/.codex/state_5.sqlite` | Codex thread totals, read-only, only when a rollout has no usage |
+
+`acm uninstall` removes everything in the first table except the package itself
+(`--self` does that too).
 
 ## Known limitations
 

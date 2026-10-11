@@ -11,6 +11,7 @@
 //     feature that has been withdrawn still has to be cleanly reversible on machines
 //     that ran it. Nothing in this file writes one any more.
 
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** The fences an older version wrote around its block. Kept for removal only. */
@@ -75,10 +76,60 @@ export function claudeCommandFile() {
 
 export const claudeCommandPath = (home) => join(home, ".claude", "commands", "acm.md");
 
-/** Written on install so there is something to edit. */
-export const DEFAULT_CONFIG = { backend: "browser", warnPerHour: 15 };
+/**
+ * Written on install so there is something to edit.
+ *
+ * Flat rather than nested: a shallow merge over a nested `window` object would let a
+ * one-key override silently drop the rest of the geometry, which is exactly the kind of
+ * bug a settings file should not be able to cause.
+ */
+export const DEFAULT_CONFIG = {
+  backend: "browser",
+  warnPerHour: 15,
+  windowWidth: 380,
+  windowHeight: 600,
+  windowX: 40,
+  windowY: 80,
+  alwaysOnTop: true,
+  port: 7420,
+};
 
 export function mergeConfig(current, patch) {
   const base = current !== null && typeof current === "object" ? current : {};
   return { ...DEFAULT_CONFIG, ...base, ...patch };
+}
+
+/** The config file as written, or an empty object if it is missing or broken. */
+export function readConfigFile(home) {
+  try {
+    const parsed = JSON.parse(readFileSync(configPath(home), "utf8"));
+    return parsed !== null && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const positive = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+};
+
+/**
+ * The whole precedence in one place: defaults, then the config file, then the
+ * environment. The environment wins because it is the per-invocation override, and
+ * because every variable here already existed before the file did.
+ */
+export function resolveConfig(home, env = process.env) {
+  const merged = mergeConfig(readConfigFile(home), {});
+  return {
+    backend: env.ACM_WINDOW_BACKEND ?? merged.backend,
+    warnPerHour: Number.isFinite(Number(env.ACM_WARN_PER_HOUR)) ? Number(env.ACM_WARN_PER_HOUR) : Number(merged.warnPerHour),
+    currency: (env.SPEND_WATCH_CURRENCY ?? "CNY").toUpperCase() === "USD" ? "USD" : "CNY",
+    port: positive(env.ACM_WINDOW_PORT, positive(merged.port, DEFAULT_CONFIG.port)),
+    width: positive(env.ACM_WINDOW_WIDTH, positive(merged.windowWidth, DEFAULT_CONFIG.windowWidth)),
+    height: positive(env.ACM_WINDOW_HEIGHT, positive(merged.windowHeight, DEFAULT_CONFIG.windowHeight)),
+    x: positive(env.ACM_WINDOW_X, positive(merged.windowX, DEFAULT_CONFIG.windowX)),
+    y: positive(env.ACM_WINDOW_Y, positive(merged.windowY, DEFAULT_CONFIG.windowY)),
+    alwaysOnTop: env.ACM_ALWAYS_ON_TOP === undefined ? merged.alwaysOnTop !== false : env.ACM_ALWAYS_ON_TOP !== "0",
+  };
 }

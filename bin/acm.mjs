@@ -24,6 +24,7 @@ import {
   mergeConfig,
   profilePaths,
   removeBlock,
+  resolveConfig,
 } from "../src/autostart.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -36,6 +37,7 @@ const DSH_PROFILE = process.env.ACM_DSH_PROFILE ?? "dsh-tui";
 const PLUGIN_REPO = process.env.ACM_PLUGIN_REPO ?? "https://github.com/NeutronStar714/dsh-budget-watcher";
 const LAUNCH_SCRIPT = join(PACKAGE_ROOT, "window", "launch.mjs");
 const CONFIG_FILE = configPath(homedir());
+const LOG_FILE = join(homedir(), ".cache", "agent-cost-monitor", "window.log");
 const WINDOW_URL = `http://127.0.0.1:${process.env.ACM_WINDOW_PORT ?? 7420}/`;
 
 const argv = process.argv.slice(2);
@@ -408,7 +410,22 @@ function main() {
     say(`  statusline.mjs  ${existsSync(STATUSLINE) ? "present" : "MISSING"} ${STATUSLINE}`);
     say(`  git             ${hasCommand("git") ? "present" : "missing"}`);
     say(`  dsh             ${hasCommand("dsh") ? "present" : "missing"}`);
+    const cfg = resolveConfig(homedir());
+    say(`  window          ${cfg.width}x${cfg.height} at ${cfg.x},${cfg.y}  backend=${cfg.backend}  onTop=${cfg.alwaysOnTop}  port=${cfg.port}`);
+    say(`  config file     ${existsSync(CONFIG_FILE) ? CONFIG_FILE : `${CONFIG_FILE} (not written yet; defaults apply)`}`);
+    say(`  log file        ${existsSync(LOG_FILE) ? LOG_FILE : `${LOG_FILE} (nothing logged yet)`}`);
     say(pricingCache());
+    return 0;
+  }
+
+  if (command === "log") {
+    const count = Number(option("lines") ?? 40);
+    if (!existsSync(LOG_FILE)) {
+      say(`nothing logged yet at ${LOG_FILE}`);
+      return 0;
+    }
+    const lines = readFileSync(LOG_FILE, "utf8").split("\n").filter(Boolean);
+    for (const line of lines.slice(-count)) say(`  ${line}`);
     return 0;
   }
 

@@ -4,6 +4,9 @@
 // What is left still edits a file the user owns — removing a block an older version
 // wrote — so that text handling keeps its tests.
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
@@ -17,7 +20,15 @@ import {
   mergeConfig,
   profilePaths,
   removeBlock,
+  resolveConfig,
 } from "../src/autostart.mjs";
+
+/** A throwaway home directory holding a config file, for the precedence tests. */
+function homeWith(config) {
+  const home = mkdtempSync(join(tmpdir(), "acm-test-"));
+  if (config !== undefined) writeFileSync(join(home, ".agent-cost-monitor.json"), typeof config === "string" ? config : JSON.stringify(config));
+  return home;
+}
 
 test("both PowerShell profiles are covered, because they are different files", () => {
   const paths = profilePaths("C:\\Users\\me");
@@ -85,4 +96,55 @@ test("the config keeps a user's values and fills in defaults for the rest", () =
   assert.equal(mergeConfig({ warnPerHour: 40 }, { backend: "tauri" }).warnPerHour, 40, "a patch does not wipe it");
   assert.equal(mergeConfig("not an object", {}).warnPerHour, 15, "a corrupt file is replaced, not obeyed");
   assert.equal(configPath("C:\\Users\\me"), "C:\\Users\\me\\.agent-cost-monitor.json");
+});
+
+// --- the geometry, which is what the window is placed from ------------------
+
+test("with no config file the window uses the documented defaults", () => {
+  const cfg = resolveConfig(homeWith(undefined), {});
+  assert.deepEqual(
+    { w: cfg.width, h: cfg.height, x: cfg.x, y: cfg.y, port: cfg.port, backend: cfg.backend, onTop: cfg.alwaysOnTop },
+    { w: 380, h: 600, x: 40, y: 80, port: 7420, backend: "browser", onTop: true },
+  );
+  assert.equal(cfg.currency, "CNY");
+});
+
+test("the config file moves the window, and an env var beats the file", () => {
+  const home = homeWith({ windowWidth: 520, windowHeight: 300, windowX: 900, windowY: 12, port: 7500 });
+  const fromFile = resolveConfig(home, {});
+  assert.deepEqual([fromFile.width, fromFile.height, fromFile.x, fromFile.y, fromFile.port], [520, 300, 900, 12, 7500]);
+
+  // Env wins because it is the per-invocation override, and because every one of these
+  // variables existed before the config file did.
+  const fromEnv = resolveConfig(home, { ACM_WINDOW_WIDTH: "640", ACM_WINDOW_PORT: "7600" });
+  assert.equal(fromEnv.width, 640);
+  assert.equal(fromEnv.port, 7600);
+  assert.equal(fromEnv.height, 300, "and the values it does not set still come from the file");
+});
+
+test("a nonsense size cannot produce a window that does not exist", () => {
+  // A zero or negative size, a string, or a missing key all fall back rather than
+  // handing the browser `--window-size=0,0` and producing an invisible window.
+  const cfg = resolveConfig(homeWith({ windowWidth: 0, windowHeight: -5, port: "abc" }), { ACM_WINDOW_HEIGHT: "nonsense" });
+  assert.equal(cfg.width, 380);
+  assert.equal(cfg.height, 600);
+  assert.equal(cfg.port, 7420);
+});
+
+test("a corrupt config file falls back to defaults instead of failing the launch", () => {
+  const cfg = resolveConfig(homeWith("{ this is not json"), {});
+  assert.equal(cfg.width, 380);
+  assert.equal(cfg.backend, "browser");
+});
+
+test("always-on-top can be turned off, and only an explicit false does it", () => {
+  assert.equal(resolveConfig(homeWith({ alwaysOnTop: false }), {}).alwaysOnTop, false);
+  assert.equal(resolveConfig(homeWith({}), { ACM_ALWAYS_ON_TOP: "0" }).alwaysOnTop, false);
+  assert.equal(resolveConfig(homeWith({ alwaysOnTop: false }), { ACM_ALWAYS_ON_TOP: "1" }).alwaysOnTop, true);
+  assert.equal(resolveConfig(homeWith({}), {}).alwaysOnTop, true, "and it is on by default");
+});
+
+test("currency is normalised to the two the engine prices in", () => {
+  assert.equal(resolveConfig(homeWith({}), { SPEND_WATCH_CURRENCY: "usd" }).currency, "USD");
+  assert.equal(resolveConfig(homeWith({}), { SPEND_WATCH_CURRENCY: "eur" }).currency, "CNY", "anything else is CNY, not a third currency");
 });

@@ -4,6 +4,44 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-10-11
+
+### Added
+
+- **The window's geometry is configurable.** Width, height, position, always-on-top,
+  warn line and port in `~/.agent-cost-monitor.json`, each with an environment
+  override. Verified: a `520x340` config produced `window placed 520x340 at 900,12`.
+  A zero, negative or non-numeric value falls back to the default rather than producing
+  a window that cannot be seen, and a corrupt config file is ignored rather than obeyed.
+- **`acm log [--lines N]`, and a log file at `~/.cache/agent-cost-monitor/window.log`.**
+  The question "the window did not appear" used to be unanswerable after the fact: the
+  launcher's output went to a discarded handle and nothing was written anywhere. Every
+  launch, its geometry, every source resolution and every failure reason is now
+  recorded, truncated past 256 KB. `acm doctor` prints the path.
+- **A full configuration guide** in the README: every command, every config key, every
+  environment variable, and a table of every path acm writes versus the ones it only
+  reads.
+
+### Fixed
+
+- **A console window flashed on every launch.** The placement script was spawned
+  without `windowsHide`, so a command prompt appeared each time. Spawned hidden now, and
+  the spawned processes carry `windowsHide` as well.
+- **The window appeared at the wrong size before snapping into place.** The placement
+  call ran on a fixed 2.5-second timer, so a window that ignored `--window-size` sat
+  filling the display for that whole time before jumping to the corner. It now polls
+  every 100 ms and applies the geometry as soon as there is a handle — measured at
+  **683 ms** from launch to placement, down from 2.5 s plus.
+- **The Tauri widget ignored the configuration.** It hard-coded its own size and
+  always-on-top; it now takes both from the launcher, so `backend: "tauri"` and
+  `backend: "browser"` honour the same numbers.
+
+### Notes
+
+- The blank frame on a **cold** browser start is inherent to using a browser: Edge has
+  to start before it can paint. `backend: "tauri"` avoids it entirely, which is the main
+  reason to prefer the widget once it is built.
+
 ## [0.6.0] — 2026-10-11
 
 ### Added
