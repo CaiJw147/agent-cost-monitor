@@ -64,8 +64,54 @@ claude code
 
 dsh-tui is present but untouched. Add it with: acm install --host dsh
 
+auto-launch
+  added    C:\Users\you\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+  /acm      C:\Users\you\.claude\commands\acm.md
+  Codex has no custom slash commands, so inside it use: !acm launch
+
 done.
 ```
+
+### Auto-launch
+
+After installing, **typing `claude` or `codex` in PowerShell starts the window as
+well.** It rides along; you do not have to remember it.
+
+Neither harness offers a hook for "the CLI was started" — Codex's slash commands are a
+fixed registry, and Claude Code's `statusLine` is a rendering hook, not a lifecycle
+one — so `acm` writes a small **PowerShell function** into your profile. PowerShell
+resolves a function ahead of an external command, so the function starts the window
+and then hands over to the real `claude` with your arguments untouched. It is written
+into **both** profile files, because PowerShell 5.1 and 7 keep separate ones.
+
+Every failure path falls through to running the real command: a spend window that will
+not start must never stop your agent from starting.
+
+| | |
+|---|---|
+| `acm autostart status` | which profiles carry the shim |
+| `acm autostart off` | remove it; `/acm` and `acm launch` stay available |
+| `acm autostart on` | put it back |
+| `acm launch` | start the window now, by hand |
+| `acm install --no-autostart` | install everything except the shim |
+
+The switch is a file you can edit, `~/.agent-cost-monitor.json`:
+
+```json
+{ "autoLaunch": true, "hosts": ["claude", "codex", "dsh-tui"], "backend": "browser" }
+```
+
+A fresh install turns it on; a re-install **respects a deliberate `false`**, because
+someone who turned it off did so on purpose.
+
+### Launching it from inside a harness
+
+- **Claude Code** — `/acm`. The installer writes `~/.claude/commands/acm.md`, so it
+  works whether or not auto-launch is on.
+- **Codex** — `!acm launch`. Codex has **no custom slash commands** (its registry is
+  fixed: `/fork`, `/model`, `/statusline`, …), but it does have the `!` shell escape,
+  so that is the equivalent. `acm` does not write a prompt file there, because it
+  would sit there doing nothing.
 
 | Command | What it does |
 |---|---|

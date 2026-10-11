@@ -4,6 +4,48 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-10-11
+
+### Added
+
+- **Auto-launch: typing `claude` or `codex` brings the window up with it.** Neither
+  harness lets a third party react to "the user started the CLI" — Codex's slash
+  commands are a fixed registry (verified in its binary: no custom-prompt loader, and
+  `custom prompt` appears zero times) and Claude Code's `statusLine` is a rendering
+  hook, not a lifecycle one. So the shim uses the one mechanism needing no
+  cooperation: a PowerShell **function** in the user's profile. PowerShell resolves a
+  function ahead of an ExternalScript or Application, and `claude` and `codex` are npm
+  shims, so a function of the same name wins — it starts the window, then hands over
+  to the real command with its arguments untouched. Both profile files are written,
+  because PowerShell 5.1 and 7 keep separate ones, and the block is fenced so
+  `acm autostart off` removes exactly it.
+- **`acm autostart on|off|status`**, and `acm launch [--quiet]` — what the shim calls.
+  The launch is detached and `unref`'d so the harness starts at the same speed whether
+  the window appears or not, and every failure path inside the shim falls through to
+  running the real command: **a broken spend window must never stop someone's agent
+  from starting.**
+- **`/acm` inside Claude Code**, written to `~/.claude/commands/acm.md`. Its body is a
+  plain instruction rather than a `!` shell expansion, because how a slash command
+  executes shell text has varied across versions and an instruction works either way.
+  It is written whether auto-launch is on or off — with it off, this is the whole
+  mechanism.
+- **Configuration at `~/.agent-cost-monitor.json`** (`autoLaunch`, `hosts`, `backend`),
+  so the behaviour is something to edit rather than a flag to remember. `acm install`
+  turns auto-launch on for a fresh install and **respects a deliberate `false`** on a
+  re-install; `--no-autostart` leaves your profiles alone entirely.
+
+### Notes
+
+- **Codex has no custom slash commands, so `/acm` cannot exist there.** What it does
+  have is the `!cmd` shell escape — verified in its binary, *"Run from Codex using `!`
+  (e.g. `!ls`)"* — so inside Codex the command is `!acm launch`. The installer says
+  this rather than writing a prompt file that would sit there doing nothing.
+- **Written into a shell profile, so the generated text is tested and parse-checked.**
+  The block is validated with PowerShell's own parser (0 errors) and the shim is
+  confirmed to resolve: `Get-Command claude` returns a Function while
+  `-CommandType ExternalScript,Application` still finds `claude.ps1`, which is what
+  proves there is no recursion into itself.
+
 ## [0.3.0] — 2026-10-11
 
 ### Added
