@@ -134,6 +134,12 @@ next prompt instead of becoming a ghost that blocks the feature.
 The decision is made in the launcher, which `acm` spawns detached, so your prompt is never
 held up: `acm` returns in tens of milliseconds either way (measured: 191 ms).
 
+**It has two modes, and the difference is yours to keep.** `place` runs once, right after a
+browser is spawned, and applies the configured geometry. `repair` runs on every prompt and
+**leaves an already-visible window exactly where you put it**, restoring and placing only a
+window that is hidden or minimised, and re-asserting the pin either way. Applying the geometry
+on every prompt was what reset the position each time you sent one.
+
 Both are fenced, idempotent and removable: `acm hook off` restores the file **byte for
 byte** (verified by SHA-256 against copies of the real configs), and `acm uninstall`
 removes the hooks as part of removing everything. Every write is preceded by a timestamped
@@ -519,6 +525,13 @@ treated as ended (after 30 seconds), at which point the clock stops at the last 
     one — the next prompt opens a fresh one for that host. Making reuse host-aware means
     either reading the window's URL or tracking it in the daemon, and neither is worth the
     complexity until someone actually runs two hosts side by side.
+14. **A browser window cannot appear at the right size instantly.** The placement script is
+    started before the browser and polls every 40 ms, so the delay is down to the browser's own
+    time to paint, but that is not zero — a cold start shows the window at the browser's size
+    for a moment. Only `backend: "tauri"` avoids it, because the widget declares its own size
+    instead of being corrected afterwards. Related: a cold browser can re-show its window after
+    the placement loop finishes, which drops the pin; the loop waits for that, and the next
+    prompt's repair would restore it anyway.
 
 ## Hosts
 
