@@ -68,6 +68,29 @@ test("the daemon does not append a point at now — the page owns that sample", 
   assert.equal(f.ended, true, "and it says the turn is over, which is what freezes the axis");
 });
 
+test("a host that reports its own turn bounds is believed over the samples", () => {
+  // The bug this fixed, measured on a real Codex rollout: the host called the turn 51.7s while
+  // the first and last billed samples spanned 17.6s, because the first call lands well after
+  // the turn begins. The window showed 0:18 and kept counting.
+  const units = [unit(1, T0 + 30_000), unit(1, T0 + 48_000)];
+  const guessed = figuresFrom(units, options(T0 + 48_000));
+  assert.equal(guessed.elapsedMs, 18_000, "samples alone give the wrong figure");
+
+  const told = figuresFrom(units, options(T0 + 51_700, { turnStartMs: T0, durationMs: 51_700, live: false }));
+  assert.equal(told.elapsedMs, 51_700, "the host's own measurement wins");
+  assert.equal(told.ended, true, "and it is over, so the axis is frozen");
+  assert.equal(told.series[0].atMs, 30_000, "the series is timed from the turn's real start, so the chart covers the whole turn");
+});
+
+test("a host that says the turn is running overrides the idle guess", () => {
+  // A Codex turn can sit quiet for minutes inside one command; its lifecycle events, not the
+  // absence of billing, are what say whether it is still going.
+  const f = figuresFrom([unit(1, T0)], options(T0 + 10 * 60_000, { turnStartMs: T0, live: true }));
+  assert.equal(f.live, true);
+  assert.equal(f.ended, false);
+  assert.equal(f.elapsedMs, 10 * 60_000, "and the clock runs");
+});
+
 test("a tool call in flight keeps the turn running, however long it takes", () => {
   // The transcript ends with a tool_use whose result has not been written. That is the
   // expected state during a long command, not evidence the turn ended.

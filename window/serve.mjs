@@ -148,7 +148,18 @@ async function fromCodex(now, lookup) {
         sourceDetail: `${where} \u00b7 cli ${parsed.cliVersion || "?"} \u00b7 ${parsed.provider || "?"}`,
         currency: CURRENCY,
         symbol: SYMBOL,
-        ...figuresFrom(parsed.units, { now, currency: CURRENCY, lookup, burnWindowMs: BURN_WINDOW_MS }),
+        ...figuresFrom(parsed.units, {
+          now,
+          currency: CURRENCY,
+          lookup,
+          burnWindowMs: BURN_WINDOW_MS,
+          // Codex records its own turn boundaries and even its own duration, so nothing has
+          // to be inferred from the usage samples: a turn it called 51 seconds is 51 seconds,
+          // not the span between the first and last billed call.
+          turnStartMs: parsed.turnStartedAt ?? undefined,
+          durationMs: parsed.turnDurationMs ?? undefined,
+          live: parsed.sawLifecycle ? parsed.turnEndedAt === null : undefined,
+        }),
         pollMs: CONFIG.pollMs,
         warnPerHour: WARN,
       },
@@ -229,7 +240,7 @@ function readClaudeTranscript(full, now, lookup) {
   try {
     const text = readFileSync(full, "utf8");
     if (!text.includes('"input_tokens"')) return undefined;
-    const { units, awaitingToolResult } = collectUnits(text.split("\n").filter(Boolean));
+    const { units, awaitingToolResult, turnStartedAt } = collectUnits(text.split("\n").filter(Boolean));
     if (units.length === 0) return undefined;
     return {
       ok: true,
@@ -239,7 +250,15 @@ function readClaudeTranscript(full, now, lookup) {
         sourceDetail: full.split(/[\\/]/).slice(-1)[0],
         currency: CURRENCY,
         symbol: SYMBOL,
-        ...figuresFrom(units, { now, currency: CURRENCY, lookup, burnWindowMs: BURN_WINDOW_MS, awaiting: awaitingToolResult }),
+        // The prompt that opened the turn is its real start; the first billed call is not.
+        ...figuresFrom(units, {
+          now,
+          currency: CURRENCY,
+          lookup,
+          burnWindowMs: BURN_WINDOW_MS,
+          awaiting: awaitingToolResult,
+          turnStartMs: turnStartedAt ?? undefined,
+        }),
         pollMs: CONFIG.pollMs,
         warnPerHour: WARN,
       },

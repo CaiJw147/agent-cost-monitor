@@ -29,8 +29,11 @@ export const SERIES_CAP = 240;
  * @param {(model: string, o?: object) => object|undefined} options.lookup
  * @param {number} options.burnWindowMs
  * @param {boolean} [options.awaiting] the transcript ends with an unanswered tool call
+ * @param {number} [options.turnStartMs] the turn's real start, when the host records one
+ * @param {number} [options.durationMs] the host's own measurement of the turn
+ * @param {boolean} [options.live] the host's own answer to "is this turn still running"
  */
-export function figuresFrom(units, { now, currency, lookup, burnWindowMs, awaiting = false, approximate = false, note = "" }) {
+export function figuresFrom(units, { now, currency, lookup, burnWindowMs, awaiting = false, turnStartMs, durationMs, live: liveAsserted, approximate = false, note = "" }) {
   const window = Number.isFinite(burnWindowMs) && burnWindowMs > 0 ? burnWindowMs : BURN_WINDOW_MS_DEFAULT;
   const price = (u) => usageCost(u.usage, u.model, u.time, currency, lookup);
 
@@ -58,10 +61,23 @@ export function figuresFrom(units, { now, currency, lookup, burnWindowMs, awaiti
 
   // A tool call in flight is a running turn however long it takes: the transcript ends with
   // a `tool_use` whose result has not been written yet, so the absence of new usage is the
-  // expected state, not evidence the turn is over.
-  const live = awaiting || (lastActivity !== null && now - lastActivity < IDLE_IS_ENDED_MS);
-  const elapsedMs = turnStart === null ? 0 : (live ? now : lastActivity) - turnStart;
-  const origin = turnStart ?? now;
+  // expected state, not evidence the turn is over. A host that records its own lifecycle
+  // answers this outright, and its answer is used instead of this guess.
+  const live = liveAsserted ?? (awaiting || (lastActivity !== null && now - lastActivity < IDLE_IS_ENDED_MS));
+
+  // A host-supplied start is only believed if it is a plausible epoch time. `0` has to mean
+  // "not recorded" rather than the epoch, because `0 ?? fallback` is `0` — believing it made
+  // the elapsed time equal the whole Unix era (1.79 billion seconds). A duration is a span,
+  // not an instant, so it gets its own guard.
+  const epoch = (value) => (Number.isFinite(value) && value > 1e11 ? value : undefined);
+  const start = epoch(turnStartMs) ?? turnStart;
+  const duration = Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : undefined;
+  const elapsedMs = duration !== undefined
+    ? duration
+    : start === null
+      ? 0
+      : Math.max(0, (live ? now : (lastActivity ?? start)) - start);
+  const origin = start ?? now;
 
   // A trailing window over the turn's own steps, sampled at each settled step and timed from
   // the turn's start — the panel's `series`, in the panel's units. An accumulator that never
@@ -70,10 +86,10 @@ export function figuresFrom(units, { now, currency, lookup, burnWindowMs, awaiti
   const costs = turnUnits.map((u) => price(u)?.cost ?? 0);
   const series = [];
   let windowCost = 0;
-  let start = 0;
+  let windowStart = 0;
   for (let i = 0; i < turnUnits.length; i += 1) {
     windowCost += costs[i];
-    while (turnUnits[start].time < turnUnits[i].time - window) windowCost -= costs[start++];
+    while (turnUnits[windowStart].time < turnUnits[i].time - window) windowCost -= costs[windowStart++];
     series.push({ atMs: turnUnits[i].time - origin, amountPerHour: burnPerHour(windowCost, window) });
   }
 

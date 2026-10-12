@@ -126,7 +126,7 @@ function refreshInBackground() {
  *
  * @param {string[]} raw transcript lines
  * @param {number} fallbackNow used when a timestamp will not parse
- * @returns {{units: object[], lastTurn: number, awaitingToolResult: boolean}}
+ * @returns {{units: object[], lastTurn: number, awaitingToolResult: boolean, turnStartedAt: number|null}}
  */
 export function collectUnits(raw, fallbackNow = Date.now()) {
   const units = [];
@@ -136,6 +136,9 @@ export function collectUnits(raw, fallbackNow = Date.now()) {
   // A long command is otherwise indistinguishable from an ended turn, and treating it as
   // ended froze the clock and zeroed the live rate in the middle of a running turn.
   let awaitingToolResult = false;
+  // When the current turn actually began: the prompt's own timestamp, not the first billed
+  // call's, which lands seconds later and made every turn look shorter than it was.
+  let turnStartedAt = null;
 
   for (const line of raw) {
     let entry;
@@ -150,6 +153,7 @@ export function collectUnits(raw, fallbackNow = Date.now()) {
       if (entry.isSidechain !== true && isUserPrompt(entry)) {
         turn += 1;
         awaitingToolResult = false;
+        turnStartedAt = time;
         continue;
       }
       // A tool result also arrives as a `user` entry. It closes the wait; it never opens
@@ -198,7 +202,7 @@ export function collectUnits(raw, fallbackNow = Date.now()) {
     }
     units.push(unit);
   }
-  return { units, lastTurn: turn, awaitingToolResult };
+  return { units, lastTurn: turn, awaitingToolResult, turnStartedAt };
 }
 
 /** Does this entry's content contain a block of the given type? */

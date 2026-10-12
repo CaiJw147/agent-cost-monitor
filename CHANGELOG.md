@@ -4,6 +4,45 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — 2026-10-12
+
+### Fixed
+
+- **A turn's length now comes from the host's own lifecycle events, not from usage samples.**
+  Reported as "my codex says clearly worked for 51 seconds, but ACM was still going after the
+  turn ended, showing 40s and counting upwards… then x-axis suddenly froze at 0~18s". Both
+  numbers reproduce from the real rollout:
+
+  ```
+  lifecycle (Codex's own):  21:42:53 -> 21:43:45  = 51.7s
+  usage samples alone:      21:43:25 -> 21:43:42  = 17.6s
+  ```
+
+  The first *billed* call lands 32 seconds after the turn begins, so a duration measured
+  between the first and last sample is not the turn — it is the billed part of it. Codex
+  writes `event_msg/task_started` and `event_msg/task_complete` carrying `started_at`,
+  `completed_at` and even its own `duration_ms`; the adapter now reads those, groups units by
+  task, and reports the boundaries for the engine to use.
+- **Turn counting was wrong for the same reason.** `turn_context` is written irregularly — a
+  4-turn session counted as 2. Turns are now delimited by `task_started`, with `turn_context`
+  kept as the fallback for a rollout that has no lifecycle events, and still used to name the
+  model.
+- **The clock no longer runs on after the turn has ended.** For Codex, liveness comes from the
+  lifecycle (a `task_complete` ends the turn) rather than from the 30-second idle guess, so the
+  frozen duration is the host's own figure and stops when the host says it stopped.
+- **Claude Code turns now start at the prompt**, not at the first billed call: `collectUnits`
+  reports the prompting entry's timestamp, so the elapsed time and the chart's origin cover the
+  whole turn instead of beginning partway through it.
+
+### Verified
+
+- On the real rollout that exposed it: the parser now reports `turns=4` where it previously
+  said 2, and `sawLifecycle=true` with the turn's true start.
+- 93 tests, including six for the lifecycle path (task-delimited turns, the host's duration
+  winning over the sample span, a new turn forgetting the previous duration, numeric as well
+  as ISO timestamps, and the `turn_context` fallback) and two for the engine preferring host
+  bounds over its own guess.
+
 ## [0.12.0] — 2026-10-12
 
 ### Changed

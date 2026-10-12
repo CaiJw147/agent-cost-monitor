@@ -107,6 +107,14 @@ export function parseRollout(lines) {
   let turn = 0;
   let sawUsage = false;
   let usagePath = "";
+  let turnFromTask = 0;
+  let turnFromContext = 0;
+  let sawTaskStarted = false;
+  let turnStartedAt = null;
+  let turnEndedAt = null;
+  let turnDurationMs = null;
+
+  const when = (value) => (Number.isFinite(Date.parse(value)) ? Date.parse(value) : null);
 
   for (const line of lines) {
     if (typeof line !== "string" || line === "") continue;
@@ -117,29 +125,84 @@ export function parseRollout(lines) {
       continue;
     }
     const payload = entry?.payload ?? {};
+    const kind = `${entry.type}${typeof payload.type === "string" ? "/" + payload.type : ""}`;
+    const time = when(entry.timestamp);
+    /**
+     * Codex writes `started_at`/`completed_at` in epoch **seconds** while `duration_ms` is in
+     * milliseconds. Treating seconds as milliseconds puts the start in 1970: the window then
+     * reported an elapsed time of 1.79 billion seconds and a chart with no visible duration.
+     * Anything below 1e11 cannot be an epoch in milliseconds — the threshold is 1973 — so it is
+     * read as seconds.
+     */
+    const at = (value, fallback) => {
+      const parsed = typeof value === "number" ? value : when(value);
+      if (!Number.isFinite(parsed)) return fallback;
+      return parsed < 1e11 ? parsed * 1000 : parsed;
+    };
 
-    if (entry.type === "session_meta") {
+    if (kind === "session_meta") {
       provider = typeof payload.model_provider === "string" ? payload.model_provider : provider;
       cliVersion = typeof payload.cli_version === "string" ? payload.cli_version : cliVersion;
     }
-    if (entry.type === "turn_context") {
-      turn += 1;
+    if (kind === "turn_context") {
+      turnFromContext += 1;
       if (typeof payload.model === "string" && payload.model !== "") model = payload.model;
+    }
+    if (kind === "event_msg/task_started") {
+      // A new turn, by the host's own reckoning.
+      turnFromTask += 1;
+      sawTaskStarted = true;
+      turnStartedAt = at(payload.started_at, time);
+      turnEndedAt = null;
+      turnDurationMs = null;
+    }
+    if (kind === "event_msg/task_complete") {
+      turnEndedAt = at(payload.completed_at, time);
+      // Codex already measured the turn; there is no reason to re-derive it.
+      turnDurationMs = Number.isFinite(Number(payload.duration_ms)) ? Number(payload.duration_ms) : null;
     }
 
     const found = [];
     collectUsage(payload, "payload", found);
-    const time = Number.isFinite(Date.parse(entry.timestamp)) ? Date.parse(entry.timestamp) : null;
     for (const { path, value } of found) {
       // `turn_token_usage` is a running total for the turn, so summing it would
       // multiply the bill; only per-call reports become units.
       if (/turn_token_usage|total_token_usage/i.test(path)) continue;
       sawUsage = true;
       usagePath = path;
-      units.push({ turn: Math.max(1, turn), time, model, usage: toEngineUsage(value) });
+      units.push({
+        turnTask: Math.max(1, turnFromTask),
+        turnContext: Math.max(1, turnFromContext),
+        time,
+        model,
+        usage: toEngineUsage(value),
+      });
     }
   }
-  return { units, provider, cliVersion, sawUsage, usagePath };
+
+  // Prefer the host's own boundaries; fall back only when it recorded none.
+  const turnOf = sawTaskStarted ? (u) => u.turnTask : (u) => u.turnContext;
+  for (const unit of units) {
+    unit.turn = turnOf(unit);
+    delete unit.turnTask;
+    delete unit.turnContext;
+  }
+  if (!sawTaskStarted) {
+    turnStartedAt = null;
+    turnEndedAt = null;
+    turnDurationMs = null;
+  }
+  return {
+    units,
+    provider,
+    cliVersion,
+    sawUsage,
+    usagePath,
+    turnStartedAt,
+    turnEndedAt,
+    turnDurationMs,
+    sawLifecycle: sawTaskStarted,
+  };
 }
 
 /** Read the newest rollout, or undefined when Codex has never run here. */
