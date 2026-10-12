@@ -117,6 +117,10 @@ async function fromDsh() {
       liveBurn: cost.liveBurnPerHour ?? cost.liveAmountPerHour ?? 0,
       averageBurn: cost.averageBurnPerHour ?? cost.averageAmountPerHour ?? 0,
       elapsedMs: turn.durationMs ?? 0,
+      // The panel's own flag for "this turn is still running", which the page uses to decide
+      // whether the axis is frozen. Its series is already turn-relative, like ours.
+      ended: turn.ended === true,
+      live: turn.ended !== true,
       turns: session.turns ?? 0,
       models: turn.models ?? [],
       series: turn.series ?? [],

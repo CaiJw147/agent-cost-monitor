@@ -42,16 +42,30 @@ test("costs are summed, and an unknown model is counted as unpriced rather than 
   assert.equal(f.unpriced, 1, "and it is not silently counted as zero cost");
 });
 
-test("the series ends at now, so a quiet stretch is visible as a quiet stretch", () => {
-  // The reported bug: while a slow command ran, no new settled points appeared, so the
-  // chart's right-hand label stayed minutes behind the clock. The axis now reaches the
-  // present, with the current (zero) rate at the end.
-  const now = T0 + 5 * 60_000;
-  const f = figuresFrom([unit(1, T0), unit(1, T0 + 1000)], options(now));
-  assert.equal(f.series.at(-1).atMs, now, "the last point is now");
-  assert.equal(f.series.at(-1).amountPerHour, 0, "and the rate there is the live one, which is zero");
-  assert.equal(f.liveBurn, 0);
-  assert.ok(f.series.length >= 3, "without losing the settled points");
+test("the series is timed from the turn's own start, like the panel's", () => {
+  // The panel's ledger records `atMs` relative to the turn, and two renderers of one idea
+  // must agree about what the x axis means. This used to be wall-clock absolute, which also
+  // meant a finished turn's chart slid out from under its own line.
+  const f = figuresFrom([unit(1, T0), unit(1, T0 + 1000), unit(1, T0 + 9000)], options(T0 + 9000));
+  assert.deepEqual(f.series.map((p) => p.atMs), [0, 1000, 9000]);
+  assert.equal(f.elapsedMs, 9000);
+});
+
+test("the series covers the current turn, not the session", () => {
+  // Both turns' units share one timeline, so mixing them would put turn 2's samples on top of
+  // turn 1's.
+  const f = figuresFrom([unit(1, T0), unit(1, T0 + 5000), unit(2, T0 + 60_000), unit(2, T0 + 62_000)], options(T0 + 62_000));
+  assert.deepEqual(f.series.map((p) => p.atMs), [0, 2000], "timed from turn 2's own start");
+  assert.equal(f.turns, 2);
+});
+
+test("the daemon does not append a point at now — the page owns that sample", () => {
+  // The panel's client appends the trailing sample so a live line reaches the axis edge. If
+  // both ends did it, a frozen chart would still creep forward.
+  const f = figuresFrom([unit(1, T0)], options(T0 + 120_000));
+  assert.equal(f.series.length, 1);
+  assert.equal(f.series.at(-1).atMs, 0);
+  assert.equal(f.ended, true, "and it says the turn is over, which is what freezes the axis");
 });
 
 test("a tool call in flight keeps the turn running, however long it takes", () => {
@@ -78,7 +92,7 @@ test("the live rate is a trailing window, not a running total", () => {
   const units = [unit(1, T0), unit(1, T0 + 1000), unit(1, T0 + 2000)];
   const f = figuresFrom(units, options(T0 + 2000));
   assert.equal(f.liveBurn, 720);
-  assert.equal(f.series.at(-2).amountPerHour, 720);
+  assert.equal(f.series.at(-1).amountPerHour, 720);
 
   // Once the window has passed, the rate is zero even though the session spent 3.
   assert.equal(figuresFrom(units, options(T0 + 60_000)).liveBurn, 0);
@@ -99,7 +113,7 @@ test("an empty session produces zeros rather than NaN", () => {
     { t: f.turnCost, s: f.sessionCost, l: f.liveBurn, a: f.averageBurn, e: f.elapsedMs, n: f.turns },
     { t: 0, s: 0, l: 0, a: 0, e: 0, n: 0 },
   );
-  assert.equal(f.series.length, 1, "the axis still reaches now");
+  assert.equal(f.series.length, 0, "nothing to draw; the page anchors the origin itself");
 });
 
 test("a nonsense burn window falls back rather than producing Infinity", () => {

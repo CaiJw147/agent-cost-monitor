@@ -144,14 +144,44 @@ test("an approximation is labelled with its reason", () => {
 
 test("the chart renders the burn series against the warning line", () => {
   const { page } = loadPage();
-  const svg = page.chart(okPayload({ series: [{ atMs: 1, amountPerHour: 10 }, { atMs: 2, amountPerHour: 30 }] }));
+  const svg = page.chart(okPayload({ series: [{ atMs: 0, amountPerHour: 10 }, { atMs: 2000, amountPerHour: 30 }], elapsedMs: 2000 }));
   assert.match(svg, /<svg/);
   assert.match(svg, /class="burn"/, "the burn line");
   assert.match(svg, /class="warn"/, "the dashed warning line");
 });
 
-test("an empty series does not break the chart", () => {
+test("the line starts at the origin, and the axis is the turn's own clock", () => {
+  // Aligned with dsh-budget-watcher: the x axis is turn-relative, starts at 0:00, and the
+  // line is anchored at (0,0) so it draws from the moment the turn begins rather than from
+  // the first settled sample — which cannot exist until an API response reports usage, and
+  // used to leave the chart blank for the first several seconds.
   const { page } = loadPage();
-  assert.doesNotThrow(() => page.chart(okPayload({ series: [] })));
-  assert.doesNotThrow(() => page.chart(okPayload({ series: undefined })));
+  const svg = page.chart(okPayload({ series: [{ atMs: 3000, amountPerHour: 40 }], elapsedMs: 9000, ended: false }));
+  const polyline = /points="([^"]+)"/.exec(svg)[1];
+  const first = polyline.split(" ")[0].split(",");
+  assert.equal(Number(first[0]), 26, "the first point sits on the y axis (L = 26)");
+  assert.equal(Number(first[1]), 100, "and on the baseline (H - B = 112 - 12)");
+  assert.match(svg, /0:00/, "the left label is the turn's zero");
+  assert.match(svg, /→ 0:09/, "and the right label is the turn's elapsed, arrowed while running");
+});
+
+test("a finished turn's axis is frozen and unarrowed", () => {
+  const { page } = loadPage();
+  const svg = page.chart(okPayload({ series: [{ atMs: 1000, amountPerHour: 10 }], elapsedMs: 45_000, ended: true }));
+  assert.match(svg, /0:45/, "the turn's final duration");
+  assert.doesNotMatch(svg, /→/, "no arrow: the panel's cue that a turn has stopped");
+});
+
+test("the right-hand label is mm:ss of the turn, not a wall-clock time", () => {
+  const { page } = loadPage();
+  const svg = page.chart(okPayload({ series: [{ atMs: 5000, amountPerHour: 10 }], elapsedMs: 65_000, ended: false }));
+  assert.match(svg, /→ 1:05/, "the turn's own elapsed time");
+  assert.doesNotMatch(svg, /\d{2}:\d{2}/, "and nothing shaped like a time of day");
+});
+
+test("an empty series still draws a line from the origin", () => {
+  const { page } = loadPage();
+  const svg = page.chart(okPayload({ series: [], elapsedMs: 4000 }));
+  assert.match(svg, /class="burn"/);
+  assert.match(svg, /points="26.0,100.0/, "starting at (0,0)");
 });

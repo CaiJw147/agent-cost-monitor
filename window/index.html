@@ -59,24 +59,42 @@ const clock = (ms) => {
   return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
 };
 
-// The same shape the panel draws: windowed rate over time, a warn line across it,
-// and an axis whose top is a round number so the labels do not jitter.
+// The same shape the panel draws: the current turn's windowed rate over the turn's own
+// elapsed time, a warn line across it, and an axis that starts at the origin.
+//
+// Two things changed to align with dsh-budget-watcher, because two renderers of one idea
+// must agree about what the picture means:
+//   * the x axis is the TURN's time, not wall-clock time. It starts at 0:00 and stops when
+//     the turn ends, so a finished turn's chart is frozen rather than sliding out from under
+//     the line;
+//   * the line starts at (0,0) whether or not anything has settled yet. The first settled
+//     sample cannot exist until the first API response reports usage, so a chart that began
+//     at the first sample showed nothing at all for the first several seconds; anchoring at
+//     the origin draws from the moment the turn starts.
 function chart(data) {
-  const series = (data.series || []).filter((p) => Number.isFinite(p.atMs) && Number.isFinite(p.amountPerHour));
   const W = 300, H = 112, L = 26, R = 6, T = 12, B = 12;
-  if (series.length < 2) return '<div class="sub">not enough settled points to draw yet</div>';
+  const elapsedMs = Math.max(0, Number(data.elapsedMs) || 0);
+  const points = (data.series || [])
+    .filter((p) => Number.isFinite(p.atMs) && Number.isFinite(p.amountPerHour) && p.atMs >= 0)
+    .slice();
+  const lastAt = points.length > 0 ? points[points.length - 1].atMs : 0;
 
-  const xs = series.map((p) => p.atMs);
-  const t0 = Math.min(...xs), t1 = Math.max(...xs);
-  const span = Math.max(1, t1 - t0);
+  // The turn's own domain, floored at a second so a brand-new turn still has an axis.
+  const xMax = Math.max(elapsedMs, lastAt, 1000);
+  // The live sample at the current elapsed time, so a running turn's line reaches the edge
+  // and an idle stretch reads as a flat tail rather than as a chart that stopped.
+  if (xMax > lastAt) points.push({ atMs: xMax, amountPerHour: Number(data.liveBurn) || 0 });
+  // Always anchored at the origin.
+  if (points.length === 0 || points[0].atMs > 0) points.unshift({ atMs: 0, amountPerHour: 0 });
+
   const warn = Number(data.warnPerHour) || 0;
-  const peak = Math.max(warn, ...series.map((p) => p.amountPerHour), 1);
+  const peak = Math.max(warn, ...points.map((p) => p.amountPerHour), 1);
   const step = Math.pow(10, Math.floor(Math.log10(peak / 4)));
   const top = Math.max(step * Math.ceil(peak / step / 4) * 4, step);
-  const x = (t) => L + ((t - t0) / span) * (W - L - R);
+  const x = (t) => L + (t / xMax) * (W - L - R);
   const y = (v) => T + (1 - v / top) * (H - T - B);
 
-  const pts = series.map((p) => x(p.atMs).toFixed(1) + "," + y(p.amountPerHour).toFixed(1)).join(" ");
+  const pts = points.map((p) => x(p.atMs).toFixed(1) + "," + y(p.amountPerHour).toFixed(1)).join(" ");
   const ticks = [0, top / 2, top].map((v) =>
     `<line class="grid" x1="${L}" y1="${y(v).toFixed(1)}" x2="${W - R}" y2="${y(v).toFixed(1)}"/>
      <text class="axis" x="${L - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end">\u00a5${v >= 10 ? Math.round(v) : v.toFixed(1)}</text>`).join("");
@@ -84,13 +102,16 @@ function chart(data) {
     ? `<line class="warn" x1="${L}" y1="${y(warn).toFixed(1)}" x2="${W - R}" y2="${y(warn).toFixed(1)}"/>
        <text class="axiswarn" x="${W - R}" y="${(y(warn) - 3).toFixed(1)}" text-anchor="end">warn \u00a5${Math.round(warn)}</text>`
     : "";
-  const hm = (t) => { const d = new Date(t); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
 
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="burn rate over time">
+  // The right-hand label is the turn's elapsed time, arrowed while it is still running —
+  // the panel's own convention, and the cue that distinguishes running from frozen.
+  const edge = (data.ended === true ? "" : "\u2192 ") + clock(elapsedMs);
+
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="burn rate over this turn">
     ${ticks}${warnLine}
     <polyline class="burn" points="${pts}"/>
-    <text class="axis" x="${L}" y="${H - 1}">${hm(t0)}</text>
-    <text class="axis" x="${W - R}" y="${H - 1}" text-anchor="end">${hm(t1)}</text>
+    <text class="axis" x="${L}" y="${H - 1}">0:00</text>
+    <text class="axis" x="${W - R}" y="${H - 1}" text-anchor="end">${edge}</text>
   </svg>`;
 }
 

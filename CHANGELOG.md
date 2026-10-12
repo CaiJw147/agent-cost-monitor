@@ -4,6 +4,39 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — 2026-10-12
+
+### Changed
+
+- **The chart now draws the way the DSH panel draws it** — the same axis, the same origin, the
+  same freeze. Three differences were reported and all three are the same disagreement about
+  what the picture means:
+
+  1. **The x axis is the turn's time, not wall-clock time.** The panel records `atMs` relative
+     to the turn's own start; this chart was plotting absolute timestamps and labelling them
+     `HH:MM`, so a finished turn's chart slid out from under its own line. It now starts at
+     `0:00`, runs to the turn's elapsed time, and **stops when the turn stops**.
+  2. **The line is anchored at (0,0).** It previously began at the first settled sample, and
+     that sample cannot exist until an API response reports usage — which is why nothing
+     appeared for the first several seconds. `(0,0)` is prepended, exactly as the panel's
+     client does.
+  3. **The series is the current turn's, not the session's.** Both turns share one timeline, so
+     mixing them put turn 2's samples on top of turn 1's.
+
+  The right-hand label is now the turn's elapsed time, arrowed while the turn is still running
+  (`→ 1:05`) and unarrowed once it has stopped — the panel's own convention, and the cue that
+  distinguishes running from frozen. The trailing sample at the current elapsed time is appended
+  **by the page**, as the panel's client does, so a live line reaches the axis edge and a frozen
+  one stays frozen.
+
+### Verified
+
+- The payload is turn-relative on real data: the newest Claude Code turn's first sample is at
+  `atMs = 0` and the series carries only that turn's points.
+- Page tests cover the origin (`the first point sits on the y axis and on the baseline`),
+  the arrow while live, its absence when ended, mm:ss instead of a time of day, and an empty
+  series still drawing from `(0,0)`.
+
 ## [0.11.1] — 2026-10-12
 
 ### Fixed

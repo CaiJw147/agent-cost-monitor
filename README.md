@@ -436,11 +436,19 @@ And these it only **reads**:
 
 ### What the chart's axis means
 
-The x-axis runs from the first settled point **to now**, not to the last settled point.
-That distinction is the whole difference between a chart that is idle and a chart that
-has stopped: while a long command runs, no new usage is recorded, so an axis ending at the
-last point would sit minutes in the past and read as frozen. A quiet stretch is now drawn
-as a quiet stretch, with the current (usually zero) rate at the right-hand edge.
+The x-axis is the **turn's own time**, in the same units the DSH panel uses: it starts at
+`0:00`, runs to the turn's elapsed time, and **stops when the turn stops**. The labelled
+right-hand edge is that duration, arrowed while the turn is still running (`→ 1:05`) and
+unarrowed once it has ended — the panel's own convention, and the cue that distinguishes
+running from frozen.
+
+The line is **anchored at `(0,0)`** whether or not anything has settled yet. The first settled
+sample cannot exist until an API response reports usage, so a chart that began at the first
+sample showed nothing at all for the first several seconds; drawing from the origin means the
+chart is live from the moment the turn starts.
+
+Only the **current turn** is plotted. Every turn shares one timeline, so a session-wide series
+would put one turn's samples on top of another's.
 
 The **clock and `β`** work the same way. A turn whose transcript ends with a tool call
 whose result has not been written yet is *running*, however long that takes, so the clock
