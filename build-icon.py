@@ -14,6 +14,7 @@ resampling only by factors of two), and DIB entries for every size below 256.
 """
 import io
 import struct
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -23,8 +24,19 @@ ICONS = ROOT / "src-tauri" / "icons"
 PREVIEW = ROOT / "build" / "icon-ladder"
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-source = Image.open(ROOT / "icon.png").convert("RGBA")
-print(f"source {source.width}x{source.height}")
+# The 512x512 master is not kept in the repository — only the generated sets are, because they
+# are what the build and the page read. So the source is either given or absent, and absent has
+# to say so in words rather than as a traceback three frames deep in Pillow.
+SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "icon.png"
+if not SOURCE.exists():
+    raise SystemExit(
+        f"no source icon at {SOURCE}\n"
+        "The master is deliberately not in the repository. Pass one:\n"
+        "    python build-icon.py path/to/icon-512.png"
+    )
+
+source = Image.open(SOURCE).convert("RGBA")
+print(f"source {source.name} {source.width}x{source.height}")
 
 
 def ladder(image, target):
