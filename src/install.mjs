@@ -91,6 +91,13 @@ export function describeHosts(hosts) {
   lines.push(`dsh-tui      detected: ${yn(hosts.dsh.detected)}   plugin: ${hosts.dsh.status}`);
   if (hosts.dsh.detected) lines.push(`             ${hosts.dsh.detail}`);
 
-  if (hosts.codex.detected) lines.push(`codex        detected: yes   not supported yet (no status-line hook; hooks/notify only)`);
+  // Codex has been fully supported since 0.9 — the adapter reads its rollouts and SQLite, and
+  // hooks open the window on a prompt. This line used to say "not supported yet (no status-line
+  // hook; hooks/notify only)", which was true when it was written and told a Codex user their
+  // host was unsupported long after it was not.
+  if (hosts.codex.detected) {
+    lines.push(`codex        detected: yes   ${hosts.codex.status}`);
+    if (hosts.codex.detail) lines.push(`             ${hosts.codex.detail}`);
+  }
   return lines.join("\n");
 }

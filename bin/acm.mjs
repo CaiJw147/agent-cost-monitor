@@ -116,7 +116,19 @@ function detectDsh() {
 }
 
 function detectCodex() {
-  return { detected: existsSync(join(homedir(), ".codex", "config.toml")), status: "unsupported" };
+  const config = CODEX_CONFIG;
+  if (!existsSync(config)) return { detected: false, status: "not found", detail: "" };
+  let hooked = false;
+  try {
+    hooked = hasBlock(readFileSync(config, "utf8"));
+  } catch {
+    /* an unreadable config is still a detected host */
+  }
+  return {
+    detected: true,
+    status: hooked ? "hooks installed (the window opens on a prompt)" : "detected; no hooks yet",
+    detail: hooked ? config : `${config}  (add the hooks with: acm hook on)`,
+  };
 }
 
 // -------------------------------------------------------------- claude code ---

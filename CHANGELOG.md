@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.4] — 2026-10-12
+
+### Fixed
+
+- **`acm status` told Codex users their host was unsupported.** The line read "not supported
+  yet (no status-line hook; hooks/notify only)" — true when it was written, and wrong since 0.9,
+  when the Codex adapter (rollouts and SQLite) and the `SessionStart`/`UserPromptSubmit` hooks
+  landed. It now reports whether the hooks are installed and points at `acm hook on` when they
+  are not. Found by running the published 0.15.3 from the registry and reading its own output,
+  which is exactly the kind of stale text a release smoke test exists to catch.
+
 ## [0.15.3] — 2026-10-12
 
 ### Changed

@@ -81,13 +81,31 @@ test("the plugin is linked by local path, not published name", () => {
   assert.equal(pluginSpec("D:\\Dev\\deepseek\\plugindev\\dsh-budget-watcher"), "link:D:/Dev/deepseek/plugindev/dsh-budget-watcher");
 });
 
-test("the summary is honest about what dsh-tui does not yet have", () => {
-  const text = describeHosts({
+test("the summary reports each host's own status, and never calls Codex unsupported", () => {
+  const hosts = {
     claude: { detected: true, status: "configured", detail: "statusLine -> node ..." },
     dsh: { detected: true, status: 'not installed in profile "dsh-tui"', detail: "profile C:/x" },
-    codex: { detected: true, status: "unsupported" },
-  });
+    codex: { detected: true, status: "hooks installed (the window opens on a prompt)", detail: "C:/Users/x/.codex/config.toml" },
+  };
+  const text = describeHosts(hosts);
   assert.match(text, /claude code\s+detected: yes/);
   assert.match(text, /dsh-tui\s+detected: yes/);
-  assert.match(text, /codex\s+detected: yes\s+not supported yet/);
+
+  // Asserted against the fixture's own status rather than a literal sentence, because a literal
+  // is exactly what went stale: "not supported yet (no status-line hook; hooks/notify only)"
+  // was written before Codex support existed in 0.9 and shipped in a released package, where a
+  // Codex user would have read it as fact. A test that pins prose cannot notice that.
+  for (const host of [hosts.claude, hosts.dsh, hosts.codex]) {
+    assert.ok(text.includes(host.status), `the summary must carry the host's own status: ${host.status}`);
+  }
+  assert.ok(text.includes(hosts.codex.detail), "and Codex's detail line is shown");
+  assert.doesNotMatch(text, /not supported yet/);
+
+  // A Codex that is present but not yet hooked has to say so, and say how to fix it.
+  const unhooked = describeHosts({
+    ...hosts,
+    codex: { detected: true, status: "detected; no hooks yet", detail: "config  (add the hooks with: acm hook on)" },
+  });
+  assert.match(unhooked, /detected; no hooks yet/);
+  assert.match(unhooked, /acm hook on/);
 });
