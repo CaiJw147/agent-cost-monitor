@@ -150,11 +150,17 @@ public class AcmWin {
   static IntPtr hidden = IntPtr.Zero;
   // A visible window wins; a hidden one is remembered so it can be repaired instead of
   // blocking every future prompt as "already open".
+  //
+  // The title must match EXACTLY, not merely contain the name. A normal browser window or tab
+  // showing our page is titled "agent-cost-monitor - Profile 1 - Microsoft Edge", and a
+  // substring match found that large window first, decided a window was already open, and left
+  // the real one unopened — a launch that silently did nothing. Our app window and the widget
+  // are both titled exactly this.
   public static IntPtr Find(string needle) {
     IntPtr visible = IntPtr.Zero; hidden = IntPtr.Zero;
     EnumWindows((h, p) => {
       var sb = new StringBuilder(512); GetWindowText(h, sb, 512);
-      if (sb.ToString().IndexOf(needle, StringComparison.OrdinalIgnoreCase) < 0) return true;
+      if (!sb.ToString().Trim().Equals(needle, StringComparison.OrdinalIgnoreCase)) return true;
       if (IsWindowVisible(h)) { if (visible == IntPtr.Zero) visible = h; }
       else if (hidden == IntPtr.Zero) hidden = h;
       return true;
@@ -255,7 +261,7 @@ function startWindowScript(mode, timeoutMs) {
   });
 }
 
-function launchTauri() {
+async function launchTauri() {
   if (!existsSync(TAURI_EXE)) {
     log("tauri backend requested but the window is not built");
     say("  the Tauri window is not built yet — run: npm run window:tauri");
@@ -278,7 +284,20 @@ function launchTauri() {
   });
   child.unref();
   log(`tauri window launched ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}, alwaysOnTop=${CONFIG.alwaysOnTop}`);
-  return true;
+
+  // Then wait for its window, and say so if it never arrives.
+  //
+  // A widget that cannot create its window — no interactive desktop, a missing WebView2 —
+  // exits at once, with its explanation on a stderr that went to /dev/null. Without this check
+  // the launcher reported success and the user had no window at all: the failure mode being
+  // "ACM silently does not start". Returning false hands it to the browser fallback instead.
+  const probe = await startWindowScript("repair", 4000);
+  if (probe.startsWith("HANDLED")) {
+    say(`window ${probe}`);
+    return true;
+  }
+  log("the tauri widget showed no window within 4s; falling back to the browser");
+  return false;
 }
 
 function launchBrowser() {
@@ -333,7 +352,7 @@ if (existing) {
   }
 }
 
-if (useTauri && launchTauri()) {
+if (useTauri && (await launchTauri())) {
   process.exit(0);
 }
 if (useTauri) {

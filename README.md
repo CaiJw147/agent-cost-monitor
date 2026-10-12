@@ -450,8 +450,12 @@ need it in different places:
   serves them from `window/`. Declaring the sizes matters: a Chromium app window picks a
   favicon bitmap at the resolution it wants, so handing it a single image and letting it scale
   is how a taskbar icon ends up soft. Be aware that **this path cannot promise a crisp taskbar
-  icon** — that rendering is Chromium's, not ours. `backend: "tauri"` is the reliable one,
-  because a widget window carries a real multi-resolution icon.
+  icon** — that rendering is Chromium's, not ours. Edge supplies roughly 32 px for an app
+  window's icon, so on a scaled display (200% here, where the taskbar wants 64 px) Windows
+  upscales it and it looks soft — Edge's *own* default globe looks exactly the same way, which
+  is the quickest way to tell that the artwork is not at fault. `backend: "tauri"` is the
+  reliable one, because a widget window carries a real multi-resolution icon and Windows then
+  scales *down*.
 - **Tauri widget** — the icon is embedded in the executable, from `src-tauri/icons/`, which is
   generated. To change it, replace `icon.png` at the project root (512×512), run
   `python build-icon.py` — which writes a proper ladder: an explicit halving reduction with

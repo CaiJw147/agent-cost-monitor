@@ -4,6 +4,45 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] — 2026-10-12
+
+### Fixed
+
+- **A launch could be silently blocked by a completely unrelated window.** Found live on this
+  machine:
+
+  ```
+  vis=True  1132x713  pid=12940 (explorer)  title='agent-cost-monitor - 文件资源管理器'
+  ```
+
+  A **File Explorer window on the project folder** contains the project name in its title. The
+  window search matched as a *substring*, so it found Explorer's window, concluded a window was
+  already open, and did nothing — every launch in that state was a no-op. That is what "I tried
+  launching again and it failed" actually was, and it also meant the Tauri widget (with its
+  fixed icon) never got a chance to run. The search now requires an **exact** trimmed,
+  case-insensitive title match, which is what our app window and the widget both carry.
+- **A widget that cannot start left no window and no explanation.** If it exits without creating
+  one — no interactive desktop, a missing WebView2, a restricted session — the launcher used to
+  report success. It now waits up to four seconds for the window and **falls back to a browser
+  window**, verified live in an environment where the widget genuinely cannot start.
+- **`acm launch` no longer stacks a second window.** It reuses an open window; `--new` asks for
+  another deliberately. The log showed a manual launch finding an existing window and then
+  adding a second one at the corner, which is easy to read as a failure.
+
+### Notes
+
+- **The blurred taskbar icon is a display-scaling problem, and our artwork was never at fault.**
+  `AppliedDPI = 192` — this display is at **200%**, so a 32 px taskbar slot wants **64 px** of
+  artwork. An Edge/Chromium app window supplies roughly 32 px and Windows **upscales** it, which
+  is why Edge's *own* default globe was blurred in exactly the same way. The browser path cannot
+  be crisp at this scaling; with `backend: "tauri"` the widget carries a 256 px window icon that
+  Windows **downscales**. Measured along the way: the original 512 artwork was 3.7% mid-tone
+  pixels and the Illustrator redraw 1.7% — both crisp, so the artwork was exonerated by
+  measurement rather than by opinion.
+- **Why earlier diagnosis kept landing on the wrong icon:** my DPI reading of "96" came from a
+  process that was not DPI-aware, which always reports 96. Asking the registry for `AppliedDPI`
+  is what gave the real number, and it also explains why every screenshot I took was offset.
+
 ## [0.14.2] — 2026-10-12
 
 ### Fixed

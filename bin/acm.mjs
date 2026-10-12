@@ -369,15 +369,19 @@ function launch({ quiet }) {
     say(`  would start the window at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}`);
     return 0;
   }
-  // `--if-needed` is forwarded rather than answered here, for two reasons: the check has
-  // to ask the daemon, and this command must return immediately because a hook is waiting
-  // on it. The launcher is detached and makes the decision itself.
+  // Reuse an open window unless another one is asked for.
+  //
+  // A manual launch used to always open a new window, so `acm launch` with one already up left
+  // two on screen — which is what a launch "failing" looked like in the log: an existing window
+  // at 1132x713, then a second placed at the corner. `--new` is there for a deliberate second
+  // window, and the hook uses this same reuse path.
   const args = [LAUNCH_SCRIPT, ...(host === "" ? [] : ["--host", host])];
-  if (flag("if-needed")) args.push("--if-needed");
+  if (flag("new")) args.push("--new");
+  else args.push("--if-needed");
   // Detached and unref'd: a GUI process must never hold this one open, and the window
   // takes long enough to start that waiting on it would be felt.
   spawn(process.execPath, args, { detached: true, stdio: "ignore" }).unref();
-  if (!quiet) say(`  window starting at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}${flag("if-needed") ? " (only if one is not already open)" : ""}`);
+  if (!quiet) say(`  window starting at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}${flag("new") ? " (a second window)" : " (if one is not already open)"}`);
   return 0;
 }
 
@@ -509,6 +513,7 @@ function main() {
     say("acm — live spend for your coding agent\n");
     say("  acm install [--host h]     configure a host (claude | dsh | all; default: claude)");
     say("  acm launch [--host h]      start the window now (--host codex points it at Codex)");
+    say("                             reuses an open window; --new opens a second one");
     say("  acm status                 what is detected and configured");
     say("  acm uninstall              remove everything acm added to your machine");
     say("                             (--self also uninstalls the npm package)");
