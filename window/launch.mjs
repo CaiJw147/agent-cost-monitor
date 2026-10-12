@@ -27,6 +27,10 @@ const PORT = CONFIG.port;
 const HOST = valueOf("--host");
 const useTauri = process.argv.includes("--tauri") || CONFIG.backend === "tauri";
 const quiet = process.argv.includes("--quiet");
+/** Start a window only if one is not already open — the hook runs on every prompt. */
+const ifNeeded = process.argv.includes("--if-needed");
+/** The page polls once a second; this tolerates a hiccup without opening a duplicate. */
+const WINDOW_ALIVE_MS = 5000;
 const say = (line) => {
   if (!quiet) process.stdout.write(line + "\n");
 };
@@ -67,7 +71,21 @@ const TAURI_EXE = join(ROOT, "src-tauri", "target", "release", "agent-cost-monit
 
 async function daemonUp() {
   try {
-    return (await fetch(`http://127.0.0.1:${PORT}/data`, { signal: AbortSignal.timeout(1500) })).ok;
+    // /health, not /data: a probe must not look like a window asking for figures, or
+    // `--if-needed` would decide that the window it is about to check for is already open.
+    return (await fetch(`http://127.0.0.1:${PORT}/health`, { signal: AbortSignal.timeout(1500) })).ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Is a window already polling the daemon? */
+async function windowIsOpen() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${PORT}/health`, { signal: AbortSignal.timeout(1500) });
+    if (!response.ok) return false;
+    const body = await response.json();
+    return Date.now() - (Number(body.windowPolledAt) || 0) < WINDOW_ALIVE_MS;
   } catch {
     return false;
   }
@@ -226,6 +244,15 @@ function launchBrowser() {
   // Immediately, not after a delay: the browser may ignore the geometry it was given,
   // and every millisecond before this lands is a wrong-sized window on screen.
   placeWindow("agent-cost-monitor");
+}
+
+// The hook runs on every prompt, so most invocations must do nothing at all — and must
+// do it fast. This is why the check lives here rather than in `acm launch`: this script
+// is already spawned detached, so the check costs the prompt nothing.
+if (ifNeeded && (await windowIsOpen())) {
+  log("--if-needed: a window is already open; nothing to do");
+  say("a window is already open");
+  process.exit(0);
 }
 
 if (useTauri && launchTauri()) {

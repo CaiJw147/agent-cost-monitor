@@ -4,6 +4,38 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-10-11
+
+### Changed
+
+- **The hook now fires on every prompt, not only at session start.** `SessionStart` alone
+  works for a CLI launched per session and *fails in the desktop apps*, because those are
+  long-lived: it fires once when the app opens and never again when a prompt is sent — which
+  is exactly what was reported ("I don't see ACM autostarting when I sent a prompt"). Both
+  hosts also expose `UserPromptSubmit` (verified present in the Codex binary, 41 hits), so
+  both now get `SessionStart` **and** `UserPromptSubmit`.
+- **`acm launch --if-needed`.** A per-prompt hook would otherwise stack a window on every
+  prompt. The launcher asks the daemon whether a window has polled in the last five seconds
+  and does nothing if one has: the page polls once a second, so a recent request *is* a live
+  window. The daemon gained `GET /health` for this, and its own liveness probe moved there
+  too — had it kept using `/data`, the probe itself would look like a window and
+  `--if-needed` would always believe one was already open.
+- **The check lives in the launcher, not in `acm`.** `acm` must return immediately because a
+  hook is waiting on it, so it forwards `--if-needed` to the already-detached launcher,
+  which decides. Measured: 191 ms.
+
+### Verified
+
+- **Idempotence, live**: `/health` reports `windowPolledAt=0` with no window open, a recent
+  timestamp once one is polling, and `acm launch --if-needed` then printed "a window is
+  already open" while the Edge process count stayed at 9 — no second window.
+- **The upgrade path**: an entry written by 0.9.0 is replaced rather than treated as
+  present, so re-running `acm hook on` is how a machine gets the new behaviour. Applied to
+  both hosts here, with `codex doctor` still reporting `config loaded` and a4phone's hooks
+  intact.
+- 81 tests, including that the command carries `--if-needed` and that the Codex block
+  contains both events.
+
 ## [0.10.0] — 2026-10-11
 
 ### Fixed

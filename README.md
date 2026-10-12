@@ -110,13 +110,27 @@ acm hook off
 
 | Host | What is written |
 |---|---|
-| **Claude Code** | `~/.claude/settings.json` → `hooks.SessionStart`, `matcher: "startup"` — a resume or a compact is not a new session, and starting a second window for one would be noise |
-| **Codex** | `~/.codex/config.toml` → a fenced `[[hooks.SessionStart]]` block, plus `features.hooks = true` if the file does not already enable it |
+| **Claude Code** | `~/.claude/settings.json` → `hooks.SessionStart` (with `matcher: "startup"`) **and** `hooks.UserPromptSubmit` |
+| **Codex** | `~/.codex/config.toml` → fenced `[[hooks.SessionStart]]` and `[[hooks.UserPromptSubmit]]` blocks, plus `features.hooks = true` if the file does not already enable it |
+
+**Both events, because one is not enough.** `SessionStart` alone works for a CLI you launch
+per session, and fails in the desktop apps: those are long-lived, so it fires once when the
+app opens and not again when you send a prompt. `UserPromptSubmit` matches "I started
+working", which is when the window is actually wanted.
+
+The command is `acm launch --if-needed --host <host>`. **`--if-needed` is the important
+part**: this hook runs on *every* prompt, so without it each prompt would stack another
+window. The launcher asks the daemon whether a window has polled in the last five seconds
+and does nothing if one has — the page polls once a second, so a recent request *is* a live
+window. The decision is made in the launcher, which `acm` spawns detached, so your prompt is
+never held up: `acm` returns in tens of milliseconds either way (measured: 191 ms).
 
 Both are fenced, idempotent and removable: `acm hook off` restores the file **byte for
 byte** (verified by SHA-256 against copies of the real configs), and `acm uninstall`
-removes the hooks as part of removing everything. Every write is preceded by a
-timestamped `.bak-` copy.
+removes the hooks as part of removing everything. Every write is preceded by a timestamped
+`.bak-` copy. Re-running `acm hook on` **upgrades** an entry left by an earlier version
+rather than taking it as present, which is how a machine moves from the old single-event
+hook to this one.
 
 Two things to expect:
 

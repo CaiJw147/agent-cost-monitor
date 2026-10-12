@@ -43,6 +43,16 @@ const LOG_FILE = join(LOG_DIR, "window.log");
 /** The transcript chosen last time, so a 1 Hz poll does not rescan every request. */
 let claudePick = { path: "", at: 0 };
 
+/**
+ * When a window last asked for figures.
+ *
+ * This is how `acm launch --if-needed` knows one is already open, without spawning a
+ * PowerShell probe on every prompt: the page polls this daemon once a second, so a recent
+ * request *is* a live window. The launcher's own liveness probe uses /health instead, so
+ * it never counts itself as a window.
+ */
+let lastWindowPollAt = 0;
+
 /** Every resolution, so "why is it showing that" is answerable after the fact. */
 function log(message) {
   try {
@@ -271,8 +281,12 @@ async function resolveData(prefer, now, lookup) {
 
 createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
+  if (url.pathname === "/health") {
+    return json(res, { ok: true, port: PORT, windowPolledAt: lastWindowPollAt });
+  }
   if (url.pathname === "/data") {
     const now = Date.now();
+    lastWindowPollAt = now;
     const lookup = makeLookup();
     const prefer = (url.searchParams.get("host") ?? process.env.ACM_PREFER_HOST ?? "").trim().toLowerCase();
     try {

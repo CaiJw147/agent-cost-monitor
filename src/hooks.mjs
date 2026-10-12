@@ -24,64 +24,98 @@ import { MARK_BEGIN, MARK_END, hasBlock } from "./autostart.mjs";
 /** How our own hook is recognised in either host, so removal never guesses. */
 export const MARKER = "acm launch";
 
-/** The host name each source is known by, so the window reads the right files. */
-export const hookCommand = (host) => `acm launch --host ${host}`;
+/**
+ * The host name each source is known by, so the window reads the right files.
+ *
+ * `--if-needed` is not decoration: this hook runs on **every** prompt, and without it each
+ * prompt would open another window. The launcher asks the daemon whether a window has
+ * polled recently, and does nothing if one has.
+ */
+export const hookCommand = (host) => `acm launch --if-needed --host ${host}`;
+
+/** Both events we install, and why both. */
+export const EVENTS = ["SessionStart", "UserPromptSubmit"];
 
 // ------------------------------------------------------- Claude Code (JSON) ---
 
 /**
- * One `SessionStart` entry.
+ * One entry for a given event.
  *
- * `matcher: "startup"` and not `"*"`: a resumed or compacted session is not a new
- * session, and starting a second window for one would be noise.
+ * `SessionStart` is scoped with `matcher: "startup"` — a resumed or compacted session is
+ * not a new session. `UserPromptSubmit` fires on every prompt, and that is the event that
+ * actually works in the desktop apps: they are long-lived, so SessionStart fires once when
+ * the app opens and not again when a prompt is sent, which is why the window failed to
+ * appear for later prompts.
  */
-export function claudeHookEntry(host) {
-  return { matcher: "startup", hooks: [{ type: "command", command: hookCommand(host) }] };
+export function claudeHookEntry(host, event = "SessionStart") {
+  const entry = { hooks: [{ type: "command", command: hookCommand(host) }] };
+  if (event === "SessionStart") entry.matcher = "startup";
+  return entry;
 }
 
 export const isOurClaudeEntry = (entry) =>
   Array.isArray(entry?.hooks) && entry.hooks.some((h) => typeof h?.command === "string" && h.command.includes(MARKER));
 
-/** Add our entry, or report that it is already there. Never mutates the input. */
+/**
+ * Add our entries, or report that they are already there. Never mutates the input.
+ *
+ * Idempotent per event, and it *upgrades*: an entry left by an earlier version — no
+ * `--if-needed`, or only the old event — is replaced rather than taken as present, so
+ * re-running `acm hook on` after an upgrade is how a machine gets the new behaviour.
+ */
 export function planClaudeHookInstall(settings, host) {
   const current = settings !== null && typeof settings === "object" ? settings : {};
   const next = JSON.parse(JSON.stringify(current));
   const hooks = next.hooks !== null && typeof next.hooks === "object" ? next.hooks : (next.hooks = {});
-  const entries = Array.isArray(hooks.SessionStart) ? hooks.SessionStart : (hooks.SessionStart = []);
+  let changed = false;
 
-  if (entries.some(isOurClaudeEntry)) return { settings: next, changed: false };
-  entries.push(claudeHookEntry(host));
-  return { settings: next, changed: true };
+  for (const event of EVENTS) {
+    const wanted = claudeHookEntry(host, event);
+    const existing = Array.isArray(hooks[event]) ? hooks[event] : [];
+    const ours = existing.filter(isOurClaudeEntry);
+    if (ours.length === 1 && JSON.stringify(ours[0]) === JSON.stringify(wanted)) continue;
+    hooks[event] = [...existing.filter((entry) => !isOurClaudeEntry(entry)), wanted];
+    changed = true;
+  }
+  return { settings: next, changed };
 }
 
-/** Remove every entry of ours, and the containers it leaves empty. */
+/** Remove every entry of ours, from every event, and the containers it leaves empty. */
 export function planClaudeHookRemove(settings) {
   const current = settings !== null && typeof settings === "object" ? settings : {};
   const next = JSON.parse(JSON.stringify(current));
-  const entries = next.hooks?.SessionStart;
-  if (!Array.isArray(entries)) return { settings: next, changed: false };
+  if (next.hooks === null || typeof next.hooks !== "object") return { settings: next, changed: false };
 
-  const kept = entries.filter((entry) => !isOurClaudeEntry(entry));
-  if (kept.length === entries.length) return { settings: next, changed: false };
-
-  if (kept.length === 0) delete next.hooks.SessionStart;
-  else next.hooks.SessionStart = kept;
-  // Only remove `hooks` itself if nothing else is using it — a4phone's three hooks are
-  // in this same object and losing them would be a real loss, not a cosmetic one.
+  let changed = false;
+  for (const event of Object.keys(next.hooks)) {
+    const entries = next.hooks[event];
+    if (!Array.isArray(entries)) continue;
+    const kept = entries.filter((entry) => !isOurClaudeEntry(entry));
+    if (kept.length === entries.length) continue;
+    changed = true;
+    if (kept.length === 0) delete next.hooks[event];
+    else next.hooks[event] = kept;
+  }
+  // Only remove `hooks` itself if nothing else is using it — a4phone's hooks live in this
+  // same object, and losing them would be a real loss, not a cosmetic one.
   if (Object.keys(next.hooks).length === 0) delete next.hooks;
-  return { settings: next, changed: true };
+  return { settings: next, changed };
 }
 
 // --------------------------------------------------------- Codex (TOML) ---
 
 export function codexHookBlock(host, eol = "\n") {
+  // One table pair per event. Array-of-tables syntax means adding a second event is
+  // another `[[hooks.X]]` header rather than another key, which is why this stays valid
+  // TOML no matter how many events are listed.
+  const body = [];
+  for (const event of EVENTS) {
+    body.push(`[[hooks.${event}]]`, `[[hooks.${event}.hooks]]`, 'type = "command"', `command = "${hookCommand(host)}"`);
+  }
   return [
     MARK_BEGIN,
     "# Added by `acm hook on`. Remove with `acm hook off`, or delete this block.",
-    "[[hooks.SessionStart]]",
-    "[[hooks.SessionStart.hooks]]",
-    'type = "command"',
-    `command = "${hookCommand(host)}"`,
+    ...body,
     MARK_END,
   ].join(eol);
 }

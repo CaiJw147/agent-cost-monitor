@@ -369,10 +369,15 @@ function launch({ quiet }) {
     say(`  would start the window at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}`);
     return 0;
   }
+  // `--if-needed` is forwarded rather than answered here, for two reasons: the check has
+  // to ask the daemon, and this command must return immediately because a hook is waiting
+  // on it. The launcher is detached and makes the decision itself.
+  const args = [LAUNCH_SCRIPT, ...(host === "" ? [] : ["--host", host])];
+  if (flag("if-needed")) args.push("--if-needed");
   // Detached and unref'd: a GUI process must never hold this one open, and the window
   // takes long enough to start that waiting on it would be felt.
-  spawn(process.execPath, [LAUNCH_SCRIPT, ...(host === "" ? [] : ["--host", host])], { detached: true, stdio: "ignore" }).unref();
-  if (!quiet) say(`  window starting at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}`);
+  spawn(process.execPath, args, { detached: true, stdio: "ignore" }).unref();
+  if (!quiet) say(`  window starting at ${WINDOW_URL}${host === "" ? "" : ` (host: ${host})`}${flag("if-needed") ? " (only if one is not already open)" : ""}`);
   return 0;
 }
 

@@ -11,6 +11,7 @@ import {
   claudeHookEntry,
   codexHookBlock,
   hasBlock,
+  hookCommand,
   planClaudeHookInstall,
   planClaudeHookRemove,
   planCodexHookInstall,
@@ -19,17 +20,29 @@ import {
 
 // --- Claude Code ------------------------------------------------------------
 
-test("the Claude hook is scoped to startup, not to every session event", () => {
-  const entry = claudeHookEntry("claude");
-  assert.equal(entry.matcher, "startup", "a resume or a compact is not a new session");
-  assert.deepEqual(entry.hooks, [{ type: "command", command: "acm launch --host claude" }]);
+test("the Claude hooks cover both prompt submission and session start", () => {
+  // UserPromptSubmit is the one that works in the desktop apps: they are long-lived, so
+  // SessionStart fires once when the app opens and not again when a prompt is sent.
+  const start = claudeHookEntry("claude", "SessionStart");
+  const prompt = claudeHookEntry("claude", "UserPromptSubmit");
+  assert.equal(start.matcher, "startup", "a resume or a compact is not a new session");
+  assert.equal(prompt.matcher, undefined, "every prompt submits, so no matcher is right");
+  assert.deepEqual(start.hooks, [{ type: "command", command: "acm launch --if-needed --host claude" }]);
+  assert.deepEqual(prompt.hooks, start.hooks);
+});
+
+test("the hook command is idempotent, because it runs on every prompt", () => {
+  // Without --if-needed a per-prompt hook would open a new window on every prompt.
+  assert.match(hookCommand("codex"), /--if-needed/);
 });
 
 test("installing into an empty settings file creates only what is needed", () => {
   const { settings, changed } = planClaudeHookInstall({}, "claude");
   assert.equal(changed, true);
-  assert.deepEqual(settings.hooks.SessionStart, [claudeHookEntry("claude")]);
   assert.deepEqual(Object.keys(settings), ["hooks"], "nothing else is invented");
+  assert.deepEqual(Object.keys(settings.hooks).sort(), ["SessionStart", "UserPromptSubmit"]);
+  assert.equal(settings.hooks.SessionStart.length, 1);
+  assert.equal(settings.hooks.UserPromptSubmit.length, 1);
 });
 
 test("installing twice does not add a second hook", () => {
@@ -37,6 +50,18 @@ test("installing twice does not add a second hook", () => {
   const second = planClaudeHookInstall(first, "claude");
   assert.equal(second.changed, false);
   assert.equal(second.settings.hooks.SessionStart.length, 1);
+  assert.equal(second.settings.hooks.UserPromptSubmit.length, 1);
+});
+
+test("an entry from an earlier version is upgraded, not treated as present", () => {
+  // 0.9.0 wrote one SessionStart entry with no --if-needed. Re-running `acm hook on` has
+  // to correct it, or an upgrade would silently keep the old behaviour.
+  const old = { hooks: { SessionStart: [{ matcher: "startup", hooks: [{ type: "command", command: "acm launch --host claude" }] }] } };
+  const { settings, changed } = planClaudeHookInstall(old, "claude");
+  assert.equal(changed, true);
+  assert.equal(settings.hooks.SessionStart[0].hooks[0].command, "acm launch --if-needed --host claude");
+  assert.equal(settings.hooks.SessionStart.length, 1, "replaced, not duplicated");
+  assert.equal(settings.hooks.UserPromptSubmit.length, 1, "and the new event is added");
 });
 
 test("installing leaves another tool's hooks exactly as they were", () => {
@@ -90,7 +115,8 @@ test("the Codex block is fenced, so it can be found and removed exactly", () => 
   assert.ok(block.endsWith(MARK_END));
   assert.match(block, /\[\[hooks\.SessionStart\]\]/);
   assert.match(block, /\[\[hooks\.SessionStart\.hooks\]\]/);
-  assert.match(block, /command = "acm launch --host codex"/);
+  assert.match(block, /\[\[hooks\.UserPromptSubmit\]\]/, "both events, so a prompt in a long-lived app still opens it");
+  assert.match(block, /command = "acm launch --if-needed --host codex"/);
   assert.equal(hasBlock(block), true);
 });
 
@@ -141,7 +167,7 @@ test("changing the host corrects the block instead of adding another", () => {
   const first = planCodexHookInstall(CODEX_PLAIN, "codex").text;
   const second = planCodexHookInstall(first, "dsh");
   assert.equal(second.changed, true);
-  assert.match(second.text, /acm launch --host dsh/);
+  assert.match(second.text, /acm launch --if-needed --host dsh/);
   assert.equal(second.text.includes("--host codex"), false);
   assert.equal(second.text.match(/\[\[hooks\.SessionStart\]\]/g).length, 1);
 });
