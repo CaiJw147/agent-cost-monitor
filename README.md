@@ -446,8 +446,12 @@ The window wears the project's own icon rather than the browser's globe, and the
 need it in different places:
 
 - **Browser window** — an app window takes its icon from the *page*, so `index.html` declares
-  `<link rel="icon" href="/icon.png">` and the daemon serves it. That file is
-  `window/icon.png`, and it is the one that ships.
+  `<link rel="icon">` entries for 16/32/48/256 px plus a multi-size `.ico`, and the daemon
+  serves them from `window/`. Declaring the sizes matters: a Chromium app window picks a
+  favicon bitmap at the resolution it wants, so handing it a single image and letting it scale
+  is how a taskbar icon ends up soft. Be aware that **this path cannot promise a crisp taskbar
+  icon** — that rendering is Chromium's, not ours. `backend: "tauri"` is the reliable one,
+  because a widget window carries a real multi-resolution icon.
 - **Tauri widget** — the icon is embedded in the executable, from `src-tauri/icons/`, which is
   generated. To change it, replace `icon.png` at the project root (512×512), run
   `python build-icon.py` — which writes a proper ladder: an explicit halving reduction with
