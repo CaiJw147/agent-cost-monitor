@@ -17,9 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
      icon, not the executable's resource, and Tauri takes the default from the first entry in
      `bundle.icon` — which was `32x32.png`. A 32 px image rendered into a ~48 px slot is
      **upscaled**, which is where the blur came from. The widget now sets its window icon from
-     the 512 px PNG (`image-png` feature added), because Windows scales down well and up badly.
-     The Explorer *file* icon, which does use the multi-size `.ico`, looked correct all along —
-     a useful clue that was easy to miss.
+     `icons/icon.png` — 256 px, generated from your 512 source (`image-png` feature added) —
+     because Windows scales down well and up badly. The Explorer *file* icon, which does use
+     the multi-size `.ico`, looked correct all along — a useful clue that was easy to miss.
   2. **Every `.ico` entry was stored as PNG.** Windows has supported PNG-in-ICO since Vista,
      but the convention is DIB below 256 and PNG only at 256, and the shell paths that draw a
      taskbar button are the least forgiving. Regenerated with DIB entries for 16–128.

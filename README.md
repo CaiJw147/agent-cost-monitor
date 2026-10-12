@@ -458,7 +458,7 @@ need it in different places:
   taskbar from the window's own icon, not from the executable's resource, and Tauri's default
   comes from the first entry in `bundle.icon`. With `32x32.png` first, a 32 px image was being
   **upscaled** into a ~48 px taskbar slot — which is what blur looks like. The widget now sets
-  its window icon from the 512 px PNG, so Windows scales *down*. If a taskbar icon looks soft,
+  its window icon from `icons/icon.png` (256 px, generated from the 512 source), so Windows scales *down*. If a taskbar icon looks soft,
   check the window icon before suspecting the artwork or the `.ico`: the source here measures
   3.7% mid-tone pixels at 512 and 8.6% at 32, which is crisp.
 
