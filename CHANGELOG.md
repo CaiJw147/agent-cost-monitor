@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] — 2026-10-12
+
+### Changed
+
+- **The banner was redesigned, and the icon replica removed.** A hand-drawn SVG copy of a bitmap
+  icon reads as subtly wrong at banner size — the right answer is not to draw it better but not
+  to draw it. The **widget's chart now takes that space on the left**, which is better on its own
+  terms: it is what the project actually looks like, and it shows the figures doing something
+  rather than describing them.
+- **The flashing red dot moved beside the heading**, where it reads as a status badge next to the
+  name instead of as a detail of a picture.
+- Canvas is now 1200×340 with the bottom margin raised to match the top, so the block sits
+  evenly rather than hanging toward the bottom edge.
+
+### Verified
+
+- Rasterised with headless Edge and then **measured the render** rather than eyeballing it: the
+  heading's last ink ends at x=812 and the dot spans 836–859, a 24 px gap with no collision. On
+  the first attempt the dot sat at 900, which the render showed as floating rather than adjacent.
+
 ## [0.15.1] — 2026-10-12
 
 ### Changed

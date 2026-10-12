@@ -1,65 +1,58 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 300" role="img" aria-label="agent-cost-monitor — live cost and burn rate for AI coding agents">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" role="img" aria-label="agent-cost-monitor — live cost and burn rate for AI coding agents">
   <title>agent-cost-monitor</title>
   <defs>
-    <!-- No external fonts or images: GitHub serves this file directly, so everything is
-         inline and the animation is declarative CSS (which does run inside an <img>). -->
+    <!-- No external fonts or images: GitHub serves this file directly, so everything is inline
+         and the only animation is a declarative opacity pulse, which does run inside an <img>. -->
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#17181c"/>
       <stop offset="55%" stop-color="#101114"/>
       <stop offset="100%" stop-color="#0c0d10"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.18" cy="0.4" r="0.6">
-      <stop offset="0%" stop-color="#f4f1d0" stop-opacity="0.16"/>
-      <stop offset="100%" stop-color="#f4f1d0" stop-opacity="0"/>
+    <radialGradient id="glow" cx="0.14" cy="0.34" r="0.62">
+      <stop offset="0%" stop-color="#4c8dff" stop-opacity="0.13"/>
+      <stop offset="100%" stop-color="#4c8dff" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#4c8dff"/>
-      <stop offset="100%" stop-color="#6fb0ff"/>
+      <stop offset="100%" stop-color="#7ab6ff"/>
     </linearGradient>
     <style>
       .sans { font-family: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif; }
       .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace; }
-      @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.35 } }
+      @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
       .live { animation: pulse 2.4s ease-in-out infinite; }
-      /* The burn line is deliberately NOT animated: a dash-offset draw animation left only a
-         fragment of the line visible wherever CSS animations do not run (an image context, a
-         screenshot, a proxy), and a list of figures with no chart is worse than a static one. */
     </style>
   </defs>
 
-  <rect width="1280" height="300" fill="url(#bg)"/>
-  <rect width="1280" height="300" fill="url(#glow)"/>
-  <rect x="0.5" y="0.5" width="1279" height="299" fill="none" stroke="#23252b"/>
+  <rect width="1200" height="340" fill="url(#bg)"/>
+  <rect width="1200" height="340" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="1199" height="339" fill="none" stroke="#23252b"/>
 
-  <!-- The icon, drawn rather than embedded: crisp at any size and a few hundred bytes. -->
-  <g transform="translate(64 76)">
-    <rect width="132" height="132" rx="30" fill="#f4f1d0"/>
-    <text class="sans" x="66" y="104" font-size="104" font-weight="700" text-anchor="middle" fill="#1d1e21">$</text>
-    <circle class="live" cx="104" cy="30" r="19" fill="#e8352e"/>
+  <!-- What the project actually looks like: the widget, in the icon's old place. Everything inside
+       follows the rules the real window uses — a pinned warn line, the turn's own clock, and a
+       spike that settles into a flat tail once the turn stops spending. -->
+  <g transform="translate(64 56)">
+    <rect width="228" height="228" rx="26" fill="#141519" stroke="#23252b"/>
+    <line x1="24" y1="120" x2="204" y2="120" stroke="#d9a441" stroke-width="1.2" stroke-dasharray="5 4"/>
+    <text class="mono" x="204" y="112" font-size="12" text-anchor="end" fill="#d9a441">warn</text>
+    <polyline points="24,178 34,62 46,138 60,148 76,152 92,148 108,154 124,150 140,154 156,150 172,156 188,152 204,156"
+              fill="none" stroke="url(#line)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    <text class="mono" x="24" y="204" font-size="12" fill="#8b8b93">0:00</text>
+    <text class="mono" x="204" y="204" font-size="12" text-anchor="end" fill="#8b8b93">→ 5:21</text>
   </g>
 
-  <text class="sans" x="238" y="130" font-size="56" font-weight="700" fill="#f4f4f6" letter-spacing="-0.5">agent-cost-monitor</text>
-  <text class="sans" x="240" y="167" font-size="23" fill="#9a9aa2">Live cost and burn rate for your AI coding agents</text>
+  <text class="sans" x="332" y="136" font-size="50" font-weight="700" fill="#f4f4f6" letter-spacing="-0.5">agent-cost-monitor</text>
+  <!-- The status dot, beside the heading: the same dot the widget shows, and the only thing on
+       this banner that moves. -->
+  <circle class="live" cx="848" cy="118" r="12" fill="#e8352e"/>
 
-  <!-- The Claude Code CLI status line, which is the one place this project is a single row. -->
-  <g transform="translate(238 192)">
-    <rect width="838" height="56" rx="28" fill="#1c1d21" stroke="#2c2e34"/>
-    <circle class="live" cx="30" cy="28" r="7" fill="#3fb950"/>
-    <text class="mono" x="50" y="35" font-size="21" fill="#e9e9ec">¥0.53 / ¥19.72 · β(t) ¥0.00/h · β ¥5.94/h · 5:21</text>
+  <text class="sans" x="334" y="176" font-size="22" fill="#9a9aa2">Live cost and burn rate for your AI coding agents</text>
+
+  <g transform="translate(332 200)">
+    <rect width="804" height="54" rx="27" fill="#1c1d21" stroke="#2c2e34"/>
+    <circle class="live" cx="30" cy="27" r="7" fill="#3fb950"/>
+    <text class="mono" x="50" y="34" font-size="21" fill="#e9e9ec">¥0.53 / ¥19.72 · β(t) ¥0.00/h · β ¥5.94/h · 5:21</text>
   </g>
 
-  <!-- β, said plainly. -->
-  <text class="sans" x="240" y="282" font-size="19" fill="#7d7d86">β = <tspan fill="#c9c9d2">burn</tspan> — currency spent per hour, measured over a trailing window of settled calls</text>
-
-  <!-- The chart the window draws: the turn's own time, a pinned warn line, and a spike that
-       settles into a flat tail once the turn stops spending. -->
-  <g transform="translate(1104 74)">
-    <rect x="-16" y="-16" width="156" height="156" rx="18" fill="#141519" stroke="#23252b"/>
-    <line x1="0" y1="86" x2="124" y2="86" stroke="#d9a441" stroke-width="1" stroke-dasharray="4 3"/>
-    <text class="mono" x="124" y="82" font-size="10" text-anchor="end" fill="#d9a441">warn</text>
-    <polyline points="0,102 6,46 14,82 22,88 30,90 40,88 52,92 64,90 76,92 88,90 100,94 112,92 124,94"
-              fill="none" stroke="url(#line)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-    <text class="mono" x="0" y="122" font-size="10" fill="#8b8b93">0:00</text>
-    <text class="mono" x="124" y="122" font-size="10" text-anchor="end" fill="#8b8b93">→ 5:21</text>
-  </g>
+  <text class="sans" x="334" y="288" font-size="18" fill="#7d7d86">β = <tspan fill="#c9c9d2">burn</tspan> — currency spent per hour, over a trailing window of settled calls</text>
 </svg>
