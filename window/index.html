@@ -3,9 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <title>agent-cost-monitor</title>
-<!-- The window's own icon. A browser app window takes its icon from the page, so without
-     this it wears the browser's globe; the Tauri widget takes its own from the bundle. -->
-<link rel="icon" type="image/png" href="/icon.png" />
+<!-- The window's own icon. A browser app window takes its taskbar icon from the page, so the
+     sizes are DECLARED rather than left to the browser: a Chromium app window renders the
+     favicon through its own path at a size it picks, and offering several bitmaps lets it take
+     one at that resolution instead of scaling a single image down to mush. The .ico is there
+     because Windows favicon handling has always understood it. -->
+<link rel="icon" type="image/png" sizes="16x16" href="/icon-16.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+<link rel="icon" type="image/png" sizes="48x48" href="/icon-48.png" />
+<link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png" />
+<link rel="icon" type="image/x-icon" href="/icon.ico" />
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }

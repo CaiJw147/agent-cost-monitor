@@ -94,6 +94,19 @@ images[32].save(ICONS / "32x32.png")
 images[256].save(ICONS / "icon.png")
 print("rewrote 32/64/128/128@2x/icon.png from the same ladder")
 
+# The favicon set for the WINDOW directory, which is a different problem from the .ico.
+# When the backend is "browser" the taskbar button belongs to Edge, and a Chromium app window
+# takes its taskbar icon from the page's favicon — through its own rendering path, at its own
+# chosen size. Offering several sizes WITH their `sizes` attribute declared lets it pick a
+# bitmap at the resolution it wants instead of scaling one. It may still render small; the
+# Tauri backend is the only path that gets a real multi-resolution window icon.
+WINDOW = ROOT / "window"
+for size in (16, 32, 48, 256):
+    images[size].save(WINDOW / f"icon-{size}.png")
+images[256].save(WINDOW / "icon.png")
+(WINDOW / "icon.ico").write_bytes(ico)
+print("wrote window/icon{,-16,-32,-48,-256}.png and window/icon.ico")
+
 # A 4x-magnified sheet of the size that actually matters, for eyeballing.
 old = Image.open(ROOT / "build" / "icon-old-32.png").convert("RGBA") if (ROOT / "build" / "icon-old-32.png").exists() else None
 new = images[32].resize((128, 128), Image.Resampling.NEAREST)

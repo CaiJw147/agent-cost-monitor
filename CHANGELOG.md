@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.2] — 2026-10-12
+
+### Fixed
+
+- **The blur persisted because I had been fixing the wrong window's icon.** The backend in use
+  is `browser`, so the taskbar button belongs to **Edge** — and an Edge/Chromium app window
+  takes its taskbar icon from the **page's favicon**, rendered through Chromium's own path. No
+  `.ico` and no Tauri window icon can affect it. The 0.14.1 change improved the Tauri widget's
+  window icon, which was not the icon being looked at; that is worth stating plainly rather
+  than burying.
+- **The page now offers its icon at declared sizes.** `<link rel="icon">` entries for 16, 32,
+  48 and 256 px, plus a multi-size `.ico`, served from `window/`. A Chromium app window picks a
+  favicon bitmap at the resolution it wants; giving it one image and letting it scale is how a
+  taskbar icon ends up soft. The route is a whitelist (`/icon`, `/icon-<digits>`, `.png`/`.ico`)
+  so no path can escape the directory — `/../package.json` answers 404.
+- **Everything is regenerated from the new Illustrator source**, which measures about twice as
+  crisp as the old one — **1.7% mid-tone pixels** at full size against 3.7%, and **6.5% against
+  8.6%** at 32 px. The Tauri widget was rebuilt from it too.
+
+### Notes
+
+- **The reliable way to a crisp taskbar icon is `"backend": "tauri"`.** The widget sets a real
+  256 px window icon, whereas the browser path hands the job to Chromium. Documented in the
+  README rather than switched silently, because it changes the window's whole nature.
+
 ## [0.14.1] — 2026-10-12
 
 ### Fixed

@@ -325,13 +325,15 @@ createServer(async (req, res) => {
       return json(res, { state: "error", hint: String(error?.message ?? error) });
     }
   }
-  if (url.pathname === "/icon.png") {
-    // The page's favicon, which is what a browser app window wears as its icon. Served from
-    // the same directory as the page so a browser window and the Tauri widget can share one
-    // image rather than carrying the browser's default globe.
-    const icon = join(HERE, "icon.png");
+  if (/^\/icon(-\d+)?\.(png|ico)$/.test(url.pathname)) {
+    // The page's icon set, which is what a browser app window wears. Served from the same
+    // directory as the page so a browser window and the Tauri widget can share one image
+    // rather than carrying the browser's default globe. The pattern is a whitelist — only
+    // icon, icon-<digits> and those two extensions — so no path can escape this directory.
+    const icon = join(HERE, url.pathname.slice(1));
     if (!existsSync(icon)) return json(res, { error: "no icon" }, 404);
-    res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=3600" });
+    const type = url.pathname.endsWith(".ico") ? "image/x-icon" : "image/png";
+    res.writeHead(200, { "content-type": type, "cache-control": "max-age=3600" });
     return res.end(readFileSync(icon));
   }
   if (url.pathname === "/" || url.pathname === "/index.html") {
