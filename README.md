@@ -120,10 +120,19 @@ working", which is when the window is actually wanted.
 
 The command is `acm launch --if-needed --host <host>`. **`--if-needed` is the important
 part**: this hook runs on *every* prompt, so without it each prompt would stack another
-window. The launcher asks the daemon whether a window has polled in the last five seconds
-and does nothing if one has — the page polls once a second, so a recent request *is* a live
-window. The decision is made in the launcher, which `acm` spawns detached, so your prompt is
-never held up: `acm` returns in tens of milliseconds either way (measured: 191 ms).
+window.
+
+It decides by **finding the window**, not by asking the daemon whether anything polled. That
+distinction matters: a hidden Edge window keeps its page running, so it keeps polling —
+which meant a poll-based check kept answering "already open" for a window that was not on
+screen at all, and nothing would ever show it again. The probe uses `EnumWindows` (which
+sees hidden windows, unlike `MainWindowTitle`), and **repairs what it finds**: a hidden
+window is shown, a wrongly sized one is resized, and `WS_EX_TOPMOST` is re-asserted and then
+verified. A window that gets hidden, minimised or unpinned therefore repairs itself on the
+next prompt instead of becoming a ghost that blocks the feature.
+
+The decision is made in the launcher, which `acm` spawns detached, so your prompt is never
+held up: `acm` returns in tens of milliseconds either way (measured: 191 ms).
 
 Both are fenced, idempotent and removable: `acm hook off` restores the file **byte for
 byte** (verified by SHA-256 against copies of the real configs), and `acm uninstall`
@@ -495,6 +504,13 @@ treated as ended (after 30 seconds), at which point the clock stops at the last 
     verified only as file editing (schema, preservation of other hooks, byte-exact
     removal) and not as a hook that actually fires. Codex's hook was exercised against the
     real `config.toml`, and `codex doctor` accepts the result.
+13. **A reused window keeps the host it was created with.** The host is part of the window's
+    URL, so a window opened with no `--host` keeps asking for `auto` (dsh → codex → claude)
+    even when the prompt came from Claude Code. `--if-needed` deliberately reuses a window
+    rather than opening another, so to bind a window to a different host, close the current
+    one — the next prompt opens a fresh one for that host. Making reuse host-aware means
+    either reading the window's URL or tracking it in the daemon, and neither is worth the
+    complexity until someone actually runs two hosts side by side.
 
 ## Hosts
 

@@ -4,6 +4,44 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.1] — 2026-10-12
+
+### Fixed
+
+- **A hidden window became a ghost that blocked the feature entirely.** Reported as "now ACM
+  gives a blank widget with nothing, and also not floating on top", for the desktop apps and
+  the CLI alike. The cause was two mistakes compounding:
+
+  1. The placement script searched `Get-Process | Where MainWindowTitle`, which reports only
+     a **visible** window. A window that had got itself hidden was therefore invisible to the
+     search, so it was never placed, sized or pinned again.
+  2. `--if-needed` asked the daemon whether anything had polled recently. A hidden Edge
+     window **keeps its page running**, so it kept polling — the check answered "already
+     open" and refused to open a new window.
+
+  Together: a permanently invisible window, and a launcher that would not replace it. Every
+  prompt confirmed the ghost.
+
+  The search is now `EnumWindows`, which sees hidden windows too, and the probe **repairs**
+  what it finds — `SWP_SHOWWINDOW` shows a hidden window, the geometry is re-applied, and
+  `WS_EX_TOPMOST` is re-asserted and then verified from the window's own extended style.
+
+  Verified on the actual broken window, live:
+
+  ```
+  before:  visible=False topmost=False 40,80 225x300
+  HANDLED visible=yes wasHidden=yes topmost=yes 225x300 at 40,80
+  after:   visible=True  topmost=True  40,80 225x300
+  ```
+
+  and a second probe reported `wasHidden=no` with the window still visible and pinned — the
+  repair holds rather than oscillating.
+
+### Notes
+
+- The daemon's `/health` and its `windowPolledAt` remain, but nothing decides anything from
+  them any more: a poll proves a *page* is running, not that a window can be seen.
+
 ## [0.11.0] — 2026-10-11
 
 ### Changed
