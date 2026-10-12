@@ -4,6 +4,33 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.1] — 2026-10-12
+
+### Changed
+
+- **The README was rewritten to say only what a reader needs**, with a designed banner
+  (`assets/header.svg`) at the top instead of prose. Removed outright: the whole icon section,
+  the screenshot, and the long annotated walk-throughs.
+- **The status-line format is now scoped explicitly.** `¥0.53 / ¥19.72 · β(t) ¥0.00/h · β
+  ¥5.94/h · 5:21` is the **Claude Code CLI** row and nothing else — every other host, and Claude
+  Code when you want the picture, is the Tauri window. The old README let the row read as the
+  project's general output.
+- **β is defined before it is used.** A section states plainly that **β is burn**, defines it as
+  currency per hour and never a total, and gives every figure in the row its own meaning, then
+  states exactly what the numbers are computed from.
+- **A DSH-desktop section** now sits above *How it works*: users on DSH are pointed at
+  [dsh-budget-watcher](https://github.com/NeutronStar714/dsh-budget-watcher) first, and this
+  project is described as that one step further — cross-platform, sharing the same engine and
+  the same `burnWindowMs` meaning.
+
+### Notes
+
+- The banner is a self-contained SVG: no external fonts or images, and the burn line is
+  deliberately **not** animated, because a dash-offset draw animation left only a fragment of the
+  line wherever CSS animations do not run. Verified by rasterising it with headless Edge and
+  looking at the result, not by assuming it renders.
+- All limitations are retained, compressed to one line each.
+
 ## [0.15.0] — 2026-10-12
 
 ### Fixed
