@@ -25,12 +25,18 @@ fn main() {
             let (x, y) = (number("ACM_WINDOW_X", 40.0), number("ACM_WINDOW_Y", 80.0));
             let on_top = std::env::var("ACM_ALWAYS_ON_TOP").map(|value| value != "0").unwrap_or(true);
 
+            // The path is relative to THIS file, and icon.png lives in src-tauri/icons.
+            let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
+                .expect("the bundled 512x512 icon should decode");
+
             // A widget that panics with "os error 5" tells the user nothing. In a
             // context with no interactive desktop — a service, an SSH session, a
             // background job — creating the webview is refused by Windows, and that
             // is worth saying in words rather than in a Rust backtrace.
             if let Err(error) = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(address))
                 .title("agent-cost-monitor")
+                // `.icon` returns a Result, so the chain has to unwrap it here.
+                .icon(icon)?
                 .inner_size(width, height)
                 .position(x, y)
                 .min_inner_size(300.0, 220.0)

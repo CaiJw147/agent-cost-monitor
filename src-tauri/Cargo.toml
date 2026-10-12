@@ -9,7 +9,10 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# image-png so the window can carry a large icon: the taskbar draws a running window's own
+# icon, and the default one comes from the 32x32 PNG in bundle.icon — a 32px image rendered
+# into a 48px slot is upscaled, which is what made it look blurred.
+tauri = { version = "2", features = ["image-png"] }
 
 [profile.release]
 codegen-units = 1

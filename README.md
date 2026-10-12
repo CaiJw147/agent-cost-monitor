@@ -449,8 +449,18 @@ need it in different places:
   `<link rel="icon" href="/icon.png">` and the daemon serves it. That file is
   `window/icon.png`, and it is the one that ships.
 - **Tauri widget** — the icon is embedded in the executable, from `src-tauri/icons/`, which is
-  generated. To change it, replace `icon.png` at the project root (512×512) and run
-  `npx tauri icon icon.png`, then `npm run window:tauri`.
+  generated. To change it, replace `icon.png` at the project root (512×512), run
+  `python build-icon.py` — which writes a proper ladder: an explicit halving reduction with
+  LANCZOS, and **DIB entries below 256** where most generators write PNG — then
+  `npm run window:tauri`.
+
+- **Why a large icon matters more than a good `.ico`.** A *running* window is drawn in the
+  taskbar from the window's own icon, not from the executable's resource, and Tauri's default
+  comes from the first entry in `bundle.icon`. With `32x32.png` first, a 32 px image was being
+  **upscaled** into a ~48 px taskbar slot — which is what blur looks like. The widget now sets
+  its window icon from the 512 px PNG, so Windows scales *down*. If a taskbar icon looks soft,
+  check the window icon before suspecting the artwork or the `.ico`: the source here measures
+  3.7% mid-tone pixels at 512 and 8.6% at 32, which is crisp.
 
 ### What the chart's axis means
 

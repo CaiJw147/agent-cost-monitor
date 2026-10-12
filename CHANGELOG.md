@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.1] — 2026-10-12
+
+### Fixed
+
+- **The blurred taskbar icon, and the answer to "should I convert my icon to .ico?" — no.**
+  The `.ico` was never the problem: it already carried 16/24/32/48/64/256, the display is at
+  100% scaling so the taskbar wanted exactly 32 px, and that size was present. Three things
+  were actually wrong, in order of how much they mattered:
+
+  1. **The window's icon was 32 px.** For a *running* app the taskbar draws the window's own
+     icon, not the executable's resource, and Tauri takes the default from the first entry in
+     `bundle.icon` — which was `32x32.png`. A 32 px image rendered into a ~48 px slot is
+     **upscaled**, which is where the blur came from. The widget now sets its window icon from
+     the 512 px PNG (`image-png` feature added), because Windows scales down well and up badly.
+     The Explorer *file* icon, which does use the multi-size `.ico`, looked correct all along —
+     a useful clue that was easy to miss.
+  2. **Every `.ico` entry was stored as PNG.** Windows has supported PNG-in-ICO since Vista,
+     but the convention is DIB below 256 and PNG only at 256, and the shell paths that draw a
+     taskbar button are the least forgiving. Regenerated with DIB entries for 16–128.
+  3. **The small sizes came from one 512→32 reduction.** Now an explicit halving ladder
+     (512→256→128→64→32→16) with LANCZOS, resampling only by factors of two.
+
+  Measured first, and it **exonerated the source artwork**: 3.7% mid-tone pixels at 512 and
+  8.6% at 32 px, where a genuinely soft icon would be far higher. An earlier claim in this
+  session that the 512×512 PNG was itself blurry was wrong, and the measurement is why that is
+  known rather than argued.
+
+### Verified
+
+- The regenerated `.ico` parses as 7 entries, DIB for 16–128 and PNG at 256.
+- A 4× side-by-side of the 32 px entry before and after, and the median-tone measurement above.
+- What I could **not** verify here: the Tauri window's icon in a real taskbar, because a
+  process launched from this shell cannot create a window on the desktop (`os error 5`). The
+  change is reasoned from how the shell selects an icon, not observed.
+
 ## [0.14.0] — 2026-10-12
 
 ### Added
