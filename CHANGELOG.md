@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.3] — 2026-10-12
+
+### Changed
+
+- **The text block is vertically centred on the widget panel**, the way the panel is centred in
+  the canvas — so the three share one axis instead of two competing ones. The block sat 26 px
+  low, which is the kind of misalignment that reads as sloppy without being nameable.
+- **A second peak, at the 3:2 division of the axis (60%), rises just above the warning line.**
+  It is not decoration: it is the moment the dot would turn amber, so the chart now shows the
+  threshold being crossed and re-crossed rather than describing it. Apex sits 12 px above the
+  line — above, but plainly not a different order of magnitude.
+
+### Notes
+
+- Verified by rasterising with headless Edge and looking at the result. An attempt to measure the
+  centring from pixels was abandoned rather than trusted: the colour masks matched the background
+  gradient and the amber label instead of the panel plate and the dashed line, and a measurement
+  that answers a different question is worse than no measurement.
+
 ## [0.15.2] — 2026-10-12
 
 ### Changed

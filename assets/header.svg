@@ -35,24 +35,25 @@
     <rect width="228" height="228" rx="26" fill="#141519" stroke="#23252b"/>
     <line x1="24" y1="120" x2="204" y2="120" stroke="#d9a441" stroke-width="1.2" stroke-dasharray="5 4"/>
     <text class="mono" x="204" y="112" font-size="12" text-anchor="end" fill="#d9a441">warn</text>
-    <polyline points="24,178 34,62 46,138 60,148 76,152 92,148 108,154 124,150 140,154 156,150 172,156 188,152 204,156"
+    <polyline points="24,178 34,62 46,138 60,148 76,152 92,148 108,154 120,150 128,126 134,108 140,126 148,148 160,152 176,150 190,154 204,152"
               fill="none" stroke="url(#line)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
     <text class="mono" x="24" y="204" font-size="12" fill="#8b8b93">0:00</text>
     <text class="mono" x="204" y="204" font-size="12" text-anchor="end" fill="#8b8b93">→ 5:21</text>
   </g>
 
-  <text class="sans" x="332" y="136" font-size="50" font-weight="700" fill="#f4f4f6" letter-spacing="-0.5">agent-cost-monitor</text>
+  <text class="sans" x="332" y="110" font-size="50" font-weight="700" fill="#f4f4f6" letter-spacing="-0.5">agent-cost-monitor</text>
   <!-- The status dot, beside the heading: the same dot the widget shows, and the only thing on
-       this banner that moves. -->
-  <circle class="live" cx="848" cy="118" r="12" fill="#e8352e"/>
+       this banner that moves. Its centre sits on the cap height, so it stays level with the
+       heading whatever font the viewer has. -->
+  <circle class="live" cx="848" cy="92" r="12" fill="#e8352e"/>
 
-  <text class="sans" x="334" y="176" font-size="22" fill="#9a9aa2">Live cost and burn rate for your AI coding agents</text>
+  <text class="sans" x="334" y="150" font-size="22" fill="#9a9aa2">Live cost and burn rate for your AI coding agents</text>
 
-  <g transform="translate(332 200)">
+  <g transform="translate(332 174)">
     <rect width="804" height="54" rx="27" fill="#1c1d21" stroke="#2c2e34"/>
     <circle class="live" cx="30" cy="27" r="7" fill="#3fb950"/>
     <text class="mono" x="50" y="34" font-size="21" fill="#e9e9ec">¥0.53 / ¥19.72 · β(t) ¥0.00/h · β ¥5.94/h · 5:21</text>
   </g>
 
-  <text class="sans" x="334" y="288" font-size="18" fill="#7d7d86">β = <tspan fill="#c9c9d2">burn</tspan> — currency spent per hour, over a trailing window of settled calls</text>
+  <text class="sans" x="334" y="262" font-size="18" fill="#7d7d86">β = <tspan fill="#c9c9d2">burn</tspan> — currency spent per hour, over a trailing window of settled calls</text>
 </svg>
