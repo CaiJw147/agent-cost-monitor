@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] — 2026-10-12
+
+### Fixed
+
+- **The window no longer resets its position on every prompt.** Reported as "the positioning of
+  ACM on the screen resets per prompt", and it was true: the per-prompt check re-applied the
+  configured geometry, so a window the user had moved was yanked back to its configured corner
+  every time they sent one. The check now has two modes — `place`, used once right after a
+  browser is spawned, applies the geometry; `repair`, which runs on every prompt, restores and
+  places a window that is hidden or minimised but **leaves an already-visible window exactly
+  where it is** and only re-asserts the pin. Verified: parked at `700,300` with the pin off, a
+  repair reported `mode=repair placed=no rect=700,300 420x260 topmost=yes` — position
+  untouched, pin back.
+- **The half second of full-screen window at startup is much shorter.** PowerShell's own
+  startup (~300 ms) was being paid *after* the browser was spawned, so it landed inside the
+  visible phase, and the poll loop then only looked every 150 ms. The placement script is now
+  started **before** the browser — it is already polling when the window appears — and polls
+  every 40 ms. What remains is the browser's own time to paint its window, which no amount of
+  polling can remove; `backend: "tauri"` is the way to eliminate it entirely.
+- **A repair could report `topmost=no` on an already-visible window.** Moving the pin without a
+  show call did not take. Repairs now call `SW_SHOWNOACTIVATE` — deliberately not `SW_RESTORE`,
+  which activates the window and would steal focus on every prompt.
+
+### Verified
+
+- Both halves on a live window, in one run: the position survived a repair and the pin came
+  back; and a cold launch produced `mode=place placed=yes rect=40,80 225x300`.
+- 94 tests still pass; the launcher's PowerShell has no unit tests, so its behaviour is checked
+  against a real window — which is how each of its now-five defects was found.
+
 ## [0.13.0] — 2026-10-12
 
 ### Fixed

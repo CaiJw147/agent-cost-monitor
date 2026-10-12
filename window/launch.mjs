@@ -110,30 +110,27 @@ async function ensureDaemon() {
 }
 
 /**
- * Find the window, then make it visible, correctly sized and pinned.
+ * The PowerShell that finds the window and puts it where it belongs.
  *
- * Returns the script's one-line verdict: `NONE`, or `HANDLED visible=… wasHidden=… …`.
+ * Two modes, because "place a window I just opened" and "check on the window you already
+ * have" want different things:
  *
- * Four defects have been fixed in this script, each found by looking at a real window:
- * the placement ran on a fixed 2.5 s timer, so a window that ignored `--window-size` sat
- * filling the display first; it was spawned without `windowsHide`, so a console flashed;
- * and applying `WS_EX_TOPMOST` too early lost the flag, because the handle that exists at
- * ~100 ms can belong to a window the browser re-shows once the page paints — so the flag
- * is re-asserted over the next few seconds.
+ *   `place`   apply the configured geometry, show it, pin it. Used once, right after a
+ *             browser is spawned.
+ *   `repair`  if the window is up, leave its position and size ALONE and only re-assert the
+ *             pin; if it is hidden or minimised, restore and place it. This runs on every
+ *             prompt, and applying the configured geometry there meant every prompt yanked
+ *             the window back to its configured corner — so a window the user had moved was
+ *             reset per prompt.
  *
- * The fourth is the worst, and it is why this function now returns something. The search
- * was `Get-Process | Where MainWindowTitle`, which reports only a **visible** window. An
- * Edge window that gets hidden keeps its page running, so it keeps polling the daemon —
- * which made `--if-needed` believe a window was open — while being invisible to that
- * search, so nothing would ever show it again. The result was a permanently invisible
- * window and a launcher that refused to open a new one: every prompt confirmed the ghost.
- * The search is now `EnumWindows`, which sees hidden windows, and `SWP_SHOWWINDOW` brings
- * one back rather than leaving it behind.
+ * The search is `EnumWindows`, not `Get-Process | Where MainWindowTitle`, because the latter
+ * reports only a **visible** window: a hidden Edge window keeps its page running (so it kept
+ * polling the daemon and `--if-needed` kept believing it was open) while being invisible to
+ * that search, which left a window nothing would ever show again.
  */
-function runWindowScript(timeoutMs) {
-  if (process.platform !== "win32") return "NONE";
-  const script = join(tmpdir(), "acm-place-window.ps1");
-  const body = `
+function windowScriptBody(mode, timeoutMs) {
+  return `
+$mode = "${mode}"
 $onTop = ${CONFIG.alwaysOnTop ? "$true" : "$false"}
 Add-Type @"
 using System;
@@ -143,9 +140,13 @@ public class AcmWin {
   [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
   [DllImport("user32.dll")] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
   public delegate bool EnumProc(IntPtr h, IntPtr p);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   static IntPtr hidden = IntPtr.Zero;
   // A visible window wins; a hidden one is remembered so it can be repaired instead of
   // blocking every future prompt as "already open".
@@ -164,47 +165,94 @@ public class AcmWin {
   // GetWindowLong rather than GetWindowLongPtr: the extended style is a 32-bit mask, and
   // the Ptr form is a macro whose A/W export differs by platform.
   public static bool IsTopmost(IntPtr h) { return (GetWindowLong(h, -20) & 0x8) != 0; }
+  public static string Rect(IntPtr h) {
+    RECT r; GetWindowRect(h, out r);
+    return r.L + "," + r.T + " " + (r.R - r.L) + "x" + (r.B - r.T);
+  }
 }
 "@
 $deadline = (Get-Date).AddMilliseconds(${timeoutMs})
 $handle = [IntPtr]::Zero
+# 40ms, not 150: this is the loop whose latency is the wrongly sized window on screen.
 while ((Get-Date) -lt $deadline -and $handle -eq [IntPtr]::Zero) {
-  $handle = [AcmWin]::Find("${"agent-cost-monitor"}")
-  if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 150 }
+  $handle = [AcmWin]::Find("agent-cost-monitor")
+  if ($handle -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 40 }
 }
 if ($handle -eq [IntPtr]::Zero) { Write-Output "NONE"; exit 0 }
+
 $wasHidden = [AcmWin]::WasHidden($handle)
+$minimised = [AcmWin]::IsIconic($handle)
+# Geometry is ours only when the window is new or was not on screen; otherwise it belongs to
+# whoever put it there.
+$shouldPlace = ($mode -eq "place") -or $wasHidden -or $minimised
 $after = if ($onTop) { [IntPtr](-1) } else { [IntPtr](-2) }
-# 0x0040 = SWP_SHOWWINDOW, which both shows a hidden window and keeps a visible one up.
-# No NOMOVE/NOSIZE: the geometry is ours to set.
-[void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, 0x0040)
+$move = if ($shouldPlace) { 0x0040 } else { 0x0043 }   # NOMOVE|NOSIZE when not placing
+# SW_RESTORE (9) only when placing: it activates, and this runs on every prompt, so stealing
+# focus there would be unacceptable. SW_SHOWNOACTIVATE (4) otherwise — without a show call the
+# pin did not take on an already-visible window, which is how a repair reported topmost=no.
+[void][AcmWin]::ShowWindow($handle, $(if ($shouldPlace) { 9 } else { 4 }))
+[void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, $move)
+
 if ($onTop) {
-  foreach ($delay in @(400, 1200, 2400)) {
+  $delays = if ($shouldPlace) { @(300, 900, 1800, 4200) } else { @(500, 1200) }
+  foreach ($delay in $delays) {
     Start-Sleep -Milliseconds $delay
-    $fresh = [AcmWin]::Find("${"agent-cost-monitor"}")
+    $fresh = [AcmWin]::Find("agent-cost-monitor")
     if ($fresh -ne [IntPtr]::Zero) { $handle = $fresh }
-    [void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, 0x0040)
+    [void][AcmWin]::SetWindowPos($handle, $after, ${CONFIG.x}, ${CONFIG.y}, ${CONFIG.width}, ${CONFIG.height}, $move)
   }
 }
 $visible = if ([AcmWin]::IsWindowVisible($handle)) { "yes" } else { "no" }
 $top = if ([AcmWin]::IsTopmost($handle)) { "yes" } else { "no" }
-$was = if ($wasHidden) { "yes" } else { "no" }
-Write-Output ("HANDLED visible=" + $visible + " wasHidden=" + $was + " topmost=" + $top + " ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}")
+$placed = if ($shouldPlace) { "yes" } else { "no" }
+Write-Output ("HANDLED mode=" + $mode + " placed=" + $placed + " visible=" + $visible + " topmost=" + $top + " rect=" + [AcmWin]::Rect($handle))
 `;
+}
+
+/**
+ * Start the placement script and resolve with its one-line verdict.
+ *
+ * Asynchronous on purpose. PowerShell needs a few hundred milliseconds to start, and doing
+ * that *after* the browser was spawned put that delay in the middle of the visible phase —
+ * which is the half second of badly sized window. The caller starts this first and spawns the
+ * browser second, so the script is already polling when the window appears.
+ */
+function startWindowScript(mode, timeoutMs) {
+  if (process.platform !== "win32") return Promise.resolve("NONE");
+  const script = join(tmpdir(), `acm-window-${mode}.ps1`);
   try {
-    writeFileSync(script, body);
+    writeFileSync(script, windowScriptBody(mode, timeoutMs));
   } catch {
-    return "NONE";
+    return Promise.resolve("NONE");
   }
   // windowsHide is the point: without it this spawn flashes a console window.
-  const result = spawnSync("powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script], {
-    encoding: "utf8",
+  const child = spawn("powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", script], {
     windowsHide: true,
-    timeout: timeoutMs + 30_000,
   });
-  const outcome = (result.stdout ?? "").trim() || (result.stderr ?? "").trim() || "NONE";
-  log(`window script: ${outcome}`);
-  return outcome.split("\n")[0].trim();
+  return new Promise((resolve) => {
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      err += chunk;
+    });
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* already gone */
+      }
+      resolve("NONE");
+    }, timeoutMs + 30_000);
+    child.on("close", () => {
+      clearTimeout(timer);
+      const verdict = (out.trim() || err.trim() || "NONE").split("\n")[0].trim();
+      log(`window script (${mode}): ${verdict}`);
+      resolve(verdict);
+    });
+  });
 }
 
 function launchTauri() {
@@ -242,6 +290,11 @@ function launchBrowser() {
   }
   say(`opening ${URL_} in ${browser.split("/").pop()} (${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y})`);
   log(`launching ${browser} ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y} host=${HOST || "auto"}`);
+  // Started BEFORE the browser, and this order is the whole point: PowerShell needs a few
+  // hundred milliseconds to start up, and paying that after the browser was spawned put the
+  // delay inside the visible phase — which is the half second of full-screen window. Started
+  // first, the script is already polling every 40 ms when the window appears.
+  const placement = startWindowScript("place", 90_000);
   const child = spawn(
     browser,
     [
@@ -254,11 +307,9 @@ function launchBrowser() {
     { detached: true, stdio: "ignore", windowsHide: true },
   );
   child.unref();
-  // Immediately, not after a delay: the browser may ignore the geometry it was given, and
-  // every millisecond before this lands is a wrong-sized window on screen. The long
-  // timeout is for a cold browser, which can take far longer than a warm one to show it.
-  const verdict = runWindowScript(90_000);
-  say(verdict === "NONE" ? "window not found within 90s (the browser may still be starting)" : `window ${verdict}`);
+  return placement.then((verdict) => {
+    say(verdict === "NONE" ? "window not found within 90s (the browser may still be starting)" : `window ${verdict}`);
+  });
 }
 
 await ensureDaemon();
@@ -266,18 +317,18 @@ await ensureDaemon();
 // One probe, before anything is opened, which both decides and repairs.
 //
 // "Is a window already open?" is answered by finding the window, not by asking the daemon
-// whether anything polled: a hidden Edge window keeps polling, so the poll-based answer
-// said yes while there was nothing on screen to see. The probe finds a window (visible or
-// not), shows it, sizes it, pins it — and a hidden one comes back rather than blocking
-// every future prompt.
-const probe = runWindowScript(PROBE_MS);
+// whether anything polled: a hidden Edge window keeps polling, so the poll-based answer said
+// yes while there was nothing on screen to see. In `repair` mode it shows and pins what it
+// finds but does NOT move it — this runs on every prompt, and re-applying the configured
+// geometry each time is what reset the window's position per prompt.
+const probe = await startWindowScript("repair", PROBE_MS);
 const existing = probe.startsWith("HANDLED");
 if (existing) {
-  log(`an existing window was placed: ${probe}`);
+  log(`an existing window was checked: ${probe}`);
   say(`window ${probe}`);
   if (ifNeeded) {
-    log("--if-needed: an existing window was placed; nothing new opened");
-    say("an existing window was placed; nothing new opened");
+    log("--if-needed: an existing window is up; nothing new opened");
+    say("an existing window is up; nothing new opened");
     process.exit(0);
   }
 }
@@ -289,4 +340,6 @@ if (useTauri) {
   say("  falling back to a browser window");
 }
 
-launchBrowser();
+// Awaited so this process outlives the placement it started; it is detached, so nobody sees
+// it wait.
+await launchBrowser();
