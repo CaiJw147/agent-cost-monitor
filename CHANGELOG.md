@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — 2026-10-12
+
+### Added
+
+- **The window wears the project's own icon instead of the browser's globe.** Two paths,
+  because the two backends take their icon from different places:
+  - **Browser window** — a browser app window takes its icon from the *page*, so `index.html`
+    now declares `<link rel="icon" href="/icon.png">` and the daemon serves it from
+    `window/icon.png`. That is what replaces the globe.
+  - **Tauri widget** — the bundle icon set (`src-tauri/icons/`) was regenerated from the
+    512×512 `icon.png` at the project root with `npx tauri icon`, and the widget rebuilt, so
+    the executable's own icon is the new one.
+
+  The root `icon.png` is the source for regeneration; `window/icon.png` is the copy that
+  ships, since the page needs it at runtime.
+
+### Verified
+
+- `/icon.png` answers `HTTP 200`, `28239` bytes, `image/png`, and the served page carries the
+  `rel="icon"` link.
+- 94 tests still pass.
+
 ## [0.13.1] — 2026-10-12
 
 ### Fixed

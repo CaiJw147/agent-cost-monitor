@@ -325,6 +325,15 @@ createServer(async (req, res) => {
       return json(res, { state: "error", hint: String(error?.message ?? error) });
     }
   }
+  if (url.pathname === "/icon.png") {
+    // The page's favicon, which is what a browser app window wears as its icon. Served from
+    // the same directory as the page so a browser window and the Tauri widget can share one
+    // image rather than carrying the browser's default globe.
+    const icon = join(HERE, "icon.png");
+    if (!existsSync(icon)) return json(res, { error: "no icon" }, 404);
+    res.writeHead(200, { "content-type": "image/png", "cache-control": "max-age=3600" });
+    return res.end(readFileSync(icon));
+  }
   if (url.pathname === "/" || url.pathname === "/index.html") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     return res.end(readFileSync(join(HERE, "index.html")));

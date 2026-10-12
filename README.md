@@ -440,6 +440,18 @@ And these it only **reads**:
 `acm uninstall` removes everything in the first table except the package itself
 (`--self` does that too).
 
+### The icon
+
+The window wears the project's own icon rather than the browser's globe, and the two backends
+need it in different places:
+
+- **Browser window** — an app window takes its icon from the *page*, so `index.html` declares
+  `<link rel="icon" href="/icon.png">` and the daemon serves it. That file is
+  `window/icon.png`, and it is the one that ships.
+- **Tauri widget** — the icon is embedded in the executable, from `src-tauri/icons/`, which is
+  generated. To change it, replace `icon.png` at the project root (512×512) and run
+  `npx tauri icon icon.png`, then `npm run window:tauri`.
+
 ### What the chart's axis means
 
 The x-axis is the **turn's own time**, in the same units the DSH panel uses: it starts at
