@@ -40,6 +40,8 @@ const CONFIG = resolveConfig(homedir());
 const BURN_WINDOW_MS = CONFIG.burnWindowMs;
 /** How old the on-disk pricing cache may be before a refresh is kicked off. */
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** After a failed fetch, wait this long before trying again. */
+const RETRY_AFTER_FAILURE_MS = 10 * 60 * 1000;
 /** An in-flight turn with nothing new for this long is treated as ended. */
 const IDLE_IS_ENDED_MS = 30_000;
 
@@ -85,8 +87,23 @@ function flattenIndex(index) {
   return models;
 }
 
-/** Fetch both sources and write the cache. Runs in a detached child, or inline once. */
+/**
+ * Fetch both sources and write the cache. Runs in a detached child, or inline once.
+ *
+ * A failed model fetch must not be recorded as a success. It used to be: the cache was written
+ * with `models: {}` and a fresh `fetchedAt`, so for the next 24 hours the status line believed
+ * it had a rate card, priced nothing, and reported `¥0.00` with every model "unpriced" — which
+ * is exactly what a machine that cannot reach openrouter.ai sees. Two rules now:
+ *
+ *   * `fetchedAt` moves only when the model list actually arrived, so a failure leaves the cache
+ *     stale and the next run tries again;
+ *   * `models` is only replaced by a non-empty table, so a working rate card survives a
+ *     transient failure instead of being wiped by it;
+ *   * `lastAttemptAt` throttles the retries, because "stale" alone would mean one fetch per
+ *     status-line render, each waiting out its own timeout.
+ */
 async function refreshCache() {
+  const previous = loadCache() ?? {};
   const [ecbXml, list] = await Promise.all([
     fetch(ECB_DAILY_URL, { headers: { accept: "application/xml,text/xml" } })
       .then((r) => (r.ok ? r.text() : null))
@@ -97,11 +114,19 @@ async function refreshCache() {
   ]);
   const fx = ecbXml === null ? undefined : parseEcbDaily(ecbXml);
   const index = list === null ? undefined : parseOpenRouterModels(list);
+  const fetched = index !== undefined && index.size > 0;
+  const now = new Date().toISOString();
+
   saveCache({
-    fetchedAt: new Date().toISOString(),
-    usdToCny: fx?.usdToCny ?? null,
-    usdToCnyDate: fx?.date ?? null,
-    models: index === undefined || index.size === 0 ? {} : flattenIndex(index),
+    fetchedAt: fetched ? now : (previous.fetchedAt ?? null),
+    lastAttemptAt: now,
+    // The FX rates come from a different endpoint and can succeed on their own; keep whatever
+    // worked rather than discarding it with the part that did not.
+    usdToCny: fx?.usdToCny ?? previous.usdToCny ?? null,
+    usdToCnyDate: fx?.date ?? previous.usdToCnyDate ?? null,
+    models: fetched ? flattenIndex(index) : (previous.models ?? {}),
+    modelsFetchedAt: fetched ? now : (previous.modelsFetchedAt ?? null),
+    lastError: fetched ? null : `could not fetch the model list from ${OPENROUTER_MODELS_URL}`,
   });
 }
 
@@ -231,7 +256,7 @@ function clock(ms) {
 }
 
 /** The one line, assembled from the figures the engine produced. */
-export function renderLine({ units, now, usdToCny, lookup }) {
+export function renderLine({ units, now, usdToCny, lookup, pricingNote = "" }) {
   let sessionCost = 0;
   let windowCost = 0;
   let turnCost = 0;
@@ -270,6 +295,10 @@ export function renderLine({ units, now, usdToCny, lookup }) {
     `${BETA} ${money(average)}/h`,
     clock(turnElapsed),
   ];
+  // A line that reads ¥0.00 because there is no rate card is worse than one that says so: the
+  // figures look like a cheap session rather than a missing price list. Only appended when
+  // pricing is actually impaired, so the normal line stays a single row of numbers.
+  if (pricingNote !== "") parts.push(`(${pricingNote})`);
   return parts.join(" \u00b7 ");
 }
 
@@ -289,17 +318,37 @@ async function main() {
   }
 
   const cache = loadCache();
-  const fresh = cache !== undefined && Number.isFinite(Date.parse(cache.fetchedAt)) && Date.now() - Date.parse(cache.fetchedAt) < CACHE_TTL_MS;
+  // A cache with no model table is not a rate card, however recently it was written. Treating
+  // "fresh" as "written recently" is what made a failed fetch poison the next 24 hours: the
+  // stamp was new, the table was empty, and every figure read ¥0.00 with nothing to explain it.
+  const cachedModels = Object.keys(cache?.models ?? {}).length;
+  const fresh =
+    cache !== undefined &&
+    cachedModels > 0 &&
+    Number.isFinite(Date.parse(cache.fetchedAt)) &&
+    Date.now() - Date.parse(cache.fetchedAt) < CACHE_TTL_MS;
+  // A stale cache normally means "fetch again", but a cache that is stale because every fetch
+  // has been failing would then trigger one attempt per render, each waiting out its own
+  // timeout. So a failed attempt buys a quiet period before the next try.
+  const attemptedAt = Date.parse(cache?.lastAttemptAt ?? "");
+  const cooled = Number.isFinite(attemptedAt) && Date.now() - attemptedAt < RETRY_AFTER_FAILURE_MS;
+  let pricingNote = "";
   if (cache === undefined) {
     // First ever run: one short inline fetch so the first line is already priced,
     // then everything goes through the detached child like every other poll.
     await Promise.race([refreshCache(), new Promise((resolve) => setTimeout(resolve, 2500))]);
-  } else if (!fresh) {
+  } else if (!fresh && !cooled) {
     refreshInBackground();
+  } else if (!fresh) {
+    // Said out loud rather than left as a silent `¥0.00`: figures missing a rate card are a
+    // different thing from a session that cost nothing, and only one of them is good news.
+    pricingNote = cache.lastError ?? "pricing is out of date";
   }
 
   const rate = loadCache();
   const usdToCny = rate?.usdToCny ?? 0;
+  const priced = Object.keys(rate?.models ?? {}).length;
+  if (pricingNote === "" && priced === 0) pricingNote = "no rate card";
   const book = createPriceBook({ enabled: false, bundled: rate?.models ?? {} });
   const lookup = (model, options) => book.lookup(model, { ...options, usdToCny });
 
@@ -314,7 +363,7 @@ async function main() {
   }
 
   const { units } = collectUnits(raw);
-  process.stdout.write(renderLine({ units, now: Date.now(), usdToCny, lookup }) + "\n");
+  process.stdout.write(renderLine({ units, now: Date.now(), usdToCny, lookup, pricingNote }) + "\n");
 }
 
 if (isMain) {

@@ -31,7 +31,7 @@ test("a turn is what task_started says it is, not what a turn_context happens to
     line(started("2026-10-12T21:42:53.000Z", "t1")),
     line(billed("2026-10-12T21:43:25.000Z")),
     line(completed("2026-10-12T21:43:45.000Z", 51_700, "t1")),
-    line({ type: "turn_context", timestamp: "2026-10-12T21:43:00.000Z", payload: { model: "gpt-6-sol" } }),
+    line({ type: "turn_context", timestamp: "2026-10-12T21:43:00.000Z", payload: { model: "test-model" } }),
     line(started("2026-10-12T22:00:00.000Z", "t2")),
     line(billed("2026-10-12T22:00:30.000Z")),
   ];

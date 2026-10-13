@@ -14,7 +14,7 @@ const USAGE_ROW = {
 };
 const line = (entry) => JSON.stringify(entry);
 const META = { type: "session_meta", payload: { model_provider: "openai", cli_version: "0.155.0-alpha.9.2" } };
-const TURN = { type: "turn_context", payload: { turn_id: "t1", model: "gpt-6-astra" } };
+const TURN = { type: "turn_context", payload: { turn_id: "t1", model: "test-model" } };
 
 test("Codex's input_tokens include the cached half, so the cached half is subtracted", () => {
   // 30007 total input with 20480 cached means 9527 were billed at the uncached rate.
@@ -46,7 +46,7 @@ test("a usage record belongs to the turn_context above it, and carries that mode
   assert.equal(cliVersion, "0.155.0-alpha.9.2");
   assert.equal(units.length, 1);
   assert.equal(units[0].turn, 1);
-  assert.equal(units[0].model, "gpt-6-astra", "the model that ran, not the one configured");
+  assert.equal(units[0].model, "test-model", "the model that ran, not the one configured");
   assert.equal(units[0].time, Date.parse("2026-09-23T13:31:40.000Z"));
   assert.deepEqual(units[0].usage, { inputTokens: 9527, cacheReadTokens: 20480, cacheWriteTokens: 0, outputTokens: 101 });
 });
@@ -56,12 +56,12 @@ test("a second turn takes the second model, which is how a mid-session switch is
     line(META),
     line(TURN),
     line(USAGE_ROW),
-    line({ type: "turn_context", payload: { turn_id: "t2", model: "gpt-6-luna" } }),
+    line({ type: "turn_context", payload: { turn_id: "t2", model: "test-model" } }),
     line({ ...USAGE_ROW, timestamp: "2026-09-23T13:35:00.000Z" }),
   ]);
   assert.equal(units.length, 2);
-  assert.equal(units[0].model, "gpt-6-astra");
-  assert.equal(units[1].model, "gpt-6-luna");
+  assert.equal(units[0].model, "test-model");
+  assert.equal(units[1].model, "test-model");
   assert.equal(units[1].turn, 2);
 });
 

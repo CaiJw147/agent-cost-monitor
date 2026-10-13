@@ -5,7 +5,7 @@
 //   * the rollout JSONL carries what pricing actually needs — `payload.usage` with
 //     the cache buckets split out, and `turn_context.payload.model`, the model that
 //     really ran rather than the one configured (they differ: a config saying
-//     gpt-6-sol while the sessions ran gpt-6-luna is the reason this reads logs).
+//     test-model while the sessions ran test-model is the reason this reads logs).
 //   * `~/.codex/state_5.sqlite` carries a whole-thread total, `threads.tokens_used`,
 //     which survives a rollout with no usage records at all. That happens when a
 //     turn is refused — a subscription usage limit, for instance — and the total is

@@ -107,7 +107,7 @@ test("removing from a file that never had our hook changes nothing", () => {
 
 // --- Codex -----------------------------------------------------------------
 
-const CODEX_PLAIN = 'model = "gpt-6-sol"\n\n[tui]\nscreen_reader_detection_done = true\n';
+const CODEX_PLAIN = 'model = "test-model"\n\n[tui]\nscreen_reader_detection_done = true\n';
 
 test("the Codex block is fenced, so it can be found and removed exactly", () => {
   const block = codexHookBlock("codex");
@@ -177,7 +177,7 @@ test("the file a4phone writes round-trips byte for byte", () => {
   // already correct, and tables after it. Install then remove must restore the original
   // exactly, because that file is the user's working Codex configuration.
   const real = [
-    'model = "gpt-6-sol"',
+    'model = "test-model"',
     "",
     "[tui]",
     "screen_reader_detection_done = true",

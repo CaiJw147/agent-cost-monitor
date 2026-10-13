@@ -58,7 +58,7 @@ const okPayload = (over = {}) => ({
   averageBurn: 100.5,
   elapsedMs: 65_000,
   turns: 2,
-  models: ["gpt-6-sol"],
+  models: ["test-model"],
   series: [{ atMs: 1, amountPerHour: 10 }],
   warnPerHour: 15,
   unpriced: 0,

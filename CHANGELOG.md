@@ -4,6 +4,51 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.5] — 2026-10-13
+
+### Fixed
+
+- **A failed rate-card fetch was cached as a success for 24 hours.** Reported as "the estimate is
+  not working" after a fresh install: the line read `¥0.00 / ¥0.00 · β(t) ¥0.00/h · β ¥0.00/h`
+  with `54 unpriced`. The cause was not leftover state — it was this machine's network:
+
+  ```
+  fetch https://openrouter.ai/api/v1/models  →  UND_ERR_CONNECT_TIMEOUT
+  ```
+
+  The FX endpoint answered, the model endpoint did not, and the refresh wrote
+  `{ models: {}, fetchedAt: <now> }` anyway. So for the next 24 hours every render saw a *fresh*
+  cache, priced nothing, and had nothing to explain why. Four rules now:
+
+  - `fetchedAt` moves **only** when a model list actually arrived, so a failure leaves the cache
+    stale and the next run retries;
+  - `models` is only ever replaced by a **non-empty** table, so a working rate card survives a
+    transient failure instead of being wiped by it;
+  - a cache with **zero models never counts as fresh**, however recently it was written — the rule
+    that would have prevented this on its own;
+  - a failed attempt buys a **10-minute cooldown**, so "stale" does not mean one fetch per render,
+    each waiting out its own timeout.
+
+- **The line now says why it is zero.** A missing rate card appends `(no rate card)` (or the fetch
+  error) rather than presenting `¥0.00` as though the session had been cheap. The line previously
+  could not distinguish "cost nothing" from "cannot price anything".
+
+### Changed
+
+- **Environment-specific model names are gone from the repository.** A scan of all tracked files
+  for personal paths, email addresses, API keys, session ids and the model names this machine
+  happens to run found them in four test files and two comments; they are now `test-model`. The
+  alias table in `lib/cost.js` keeps real product names, because recognising them *is* its
+  function. Also re-confirmed: no personal paths, no email addresses, no keys, no transcript or
+  session ids anywhere in the tree.
+
+### Notes
+
+- **The rate card needs `openrouter.ai`.** Where that host is unreachable, DeepSeek models still
+  price from the bundled table and every other model reads as unpriced — now visibly, on the line
+  and in `acm doctor`, rather than as a silent zero. The cache is a plain JSON file
+  (`~/.cache/spend-watch/claude-pricing.json`) and can be seeded by hand.
+
 ## [0.15.4] — 2026-10-12
 
 ### Fixed
@@ -576,7 +621,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A Codex adapter.** `src/codex.mjs` reads `~/.codex/sessions/**/rollout-*.jsonl` for
   the per-call cache split and `~/.codex/state_5.sqlite` for a whole-thread total when
   the rollout has none. Verified against a real 0.162.1 rollout: 18 usage records,
-  priced to ¥1.4139 for the turn and ¥3.3825 for the session on `gpt-6-sol`.
+  priced to ¥1.4139 for the turn and ¥3.3825 for the session on `test-model`.
 - **`acm launch --host codex`**, and the host rides in the window's URL. The window now
   reads that host's source first and **names it on screen**.
 - **Honest reporting when there is nothing to show.** The window lists which sources
@@ -733,7 +778,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Codex CLI 0.162.1 keeps token usage in `state_5.sqlite`, not the rollout** (see
   the README's next-hosts note). `threads` carries `model`, `model_provider` and
   `tokens_used`. Verified against real rows: 3,272,214 and 316,945 tokens on
-  `gpt-6-astra`, 215,984 on `codex-auto-review`, and 0 on the newest thread — whose
+  `test-model`, 215,984 on `test-model`, and 0 on the newest thread — whose
   `error_json` reads *"You've hit your usage limit"*, so the run was refused rather
   than unrecorded.
 

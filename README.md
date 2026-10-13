@@ -19,7 +19,8 @@ CLI only**:
 **β is burn** — currency spent *per hour*. It is a rate, never a total: it answers "how fast is
 this costing me right now", which is the question a running agent makes urgent.
 
-| | |
+In the status line, or the widget:
+|||
 |---|---|
 | `¥0.53` | **this turn** — what the current turn has cost so far |
 | `¥19.72` | **this session** — every turn in the conversation |
@@ -139,6 +140,13 @@ window that was hidden or minimised — but never moves one you have positioned 
     carries a real 256 px window icon.
 12. **The balance is deliberately not shown.** It is DeepSeek's, and only DSH can read it, so in
     a window that also serves Codex and Claude Code it would describe a different provider.
+13. **The rate card comes from `openrouter.ai`, and without it nothing but DeepSeek can be
+    priced.** Where that host is unreachable — it times out from some networks — the bundled
+    DeepSeek table still prices DeepSeek, every other model reads as unpriced, and the line says
+    so (`(no rate card)`) rather than showing a bare `¥0.00`. A failed fetch is retried after ten
+    minutes and never overwrites a working card. If you need a model the fetch cannot reach, the
+    cache is a plain JSON file at `~/.cache/spend-watch/claude-pricing.json` and can be seeded by
+    hand.
 
 ## Licence
 
