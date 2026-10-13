@@ -168,9 +168,11 @@ and only `acm launch --new` opens a second one.
 10. **A reused window keeps the host it was created with.** Close it to get one bound to a
     different host. Making reuse host-aware is not worth the complexity yet.
 11. **A browser window cannot appear at the right size instantly**, and at high display scaling
-    (200% here) its taskbar icon is upscaled by Windows and looks soft — Edge does the same to
-    its *own* default icon. `backend: "tauri"` avoids both: the widget declares its own size and
-    carries a real 256 px window icon.
+    (200% here) its taskbar icon is upscaled by Windows and looks soft — Edge renders its *own*
+    default globe the same soft way, which is the quickest proof that the artwork is not at fault.
+    `backend: "tauri"` avoids both: the widget declares its own size and carries a real window
+    icon, built at **128 px** so that the 64 px taskbar slot of a 200% display is an exact 2:1
+    reduction. The window icon is compiled in, so changing it means rebuilding the widget.
 12. **The balance is deliberately not shown.** It is DeepSeek's, and only DSH can read it, so in
     a window that also serves Codex and Claude Code it would describe a different provider.
 13. **Tiered pricing is not applied.** 80 of the 459 entries in the fetched list publish a second

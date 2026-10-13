@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.11] — 2026-10-13
+
+### Changed
+
+- **The icon sets are assembled from `iconset/` instead of resampled from one big source.** The
+  set supplies exact 16, 24, 32, 128, 144 and 512 bitmaps, so `build-icon.py` now takes those
+  bitmaps **as given** — including the 24, read out of the set's own `.ico` — and derives only the
+  sizes the set does not carry (48, 64, 256), from the 512 master by halving so every step is an
+  exact 2:1. It also refuses to run if a file claims a size it does not have, and reads every
+  written file back afterwards, because a ladder that silently produces a 1x1 or an `.ico` that
+  lost an entry surfaces much later as "the icon looks wrong".
+
+- **The window's own large icon is now the 128.** This is the bitmap that decides whether a taskbar
+  looks blurred: a running window's taskbar button is drawn from the **window's** icon at the
+  taskbar's pixel size, which on a 200%-scaled display is 64 — so 128 is an exact 2:1 of it, where
+  the previous 256 was 4:1 and the available 512 would have been 8:1. The `.ico` still carries 256
+  for Explorer, the jumplist and any surface that asks for it.
+
+### Notes
+
+- **The browser backend cannot be made crisp, and this is now the stated reason to prefer the
+  widget.** A Chromium app window takes its taskbar icon from the page favicon through its own
+  rendering path at its own chosen size; Edge renders its *own* default globe the same soft way at
+  200% scaling, which is the quickest proof that the artwork is not at fault. `backend: "tauri"`
+  gives a real window icon that Windows scales **down**.
+- The window icon is compiled in with `include_bytes!`, so rebuilding the widget is part of
+  changing it — the sets on disk alone do not alter a running build.
+
 ## [0.15.10] — 2026-10-13
 
 ### Fixed

@@ -1,16 +1,20 @@
-"""Rebuild the icon ladder properly, from the 512x512 source.
+"""Assemble the icon sets from `iconset/`, using the sizes that are actually there.
 
-`npx tauri icon` produced a technically complete .ico (16/24/32/48/64/256) but with two
-problems that both show up as blur in the taskbar, where only 32px is ever shown:
+The set carries exact 16, 24, 32, 128, 144 and 512 bitmaps, plus a small .ico. Nothing here
+invents a size it was given: 16, 24, 32 and 128 are taken as-is, and only the sizes the set does
+not carry (48, 64, 256) are reduced from the 512 master by halving, so every step is an exact 2:1
+rather than one careless jump.
 
-  1. every entry was stored as a PNG. Windows has supported PNG-in-ICO since Vista, but the
-     convention every icon tool follows is DIB for the small sizes and PNG only for 256 —
-     the shell paths that draw a taskbar button are the least forgiving about it;
-  2. the small sizes come from one big downscale of a 512px image, and the detail that makes
-     a dollar sign legible at 32px is exactly what a careless one-step reduction smears.
+Why the *window* icon is the 128 and not the 512 — the thing that decides whether a taskbar looks
+blurred: a running window's taskbar button is drawn from the WINDOW's own large icon, at the
+taskbar's pixel size, which on a 200% display is 64. 128 is an exact 2:1 reduction of that; 512 is
+8:1 and would hand the shell's own filter the job. The .ico still carries 256 for Explorer, the
+jumplist and any surface that asks for it.
 
-So this does both: an explicit halving ladder with LANCZOS (512 -> 256 -> 128 -> 64 -> 32 -> 16,
-resampling only by factors of two), and DIB entries for every size below 256.
+Two conventions this follows, because the shell paths that draw a taskbar button are the least
+forgiving: DIB entries for every size below 256 and PNG only at 256, since `npx tauri icon` stores
+every entry as PNG; and no single-step downscale of the 512, which is what smears the detail that
+makes a dollar sign legible small.
 """
 import io
 import struct
@@ -21,22 +25,26 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
 ICONS = ROOT / "src-tauri" / "icons"
-PREVIEW = ROOT / "build" / "icon-ladder"
+WINDOW = ROOT / "window"
+
+# The sizes the shell asks for, and the ones worth shipping in an .ico.
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-# The 512x512 master is not kept in the repository — only the generated sets are, because they
-# are what the build and the page read. So the source is either given or absent, and absent has
-# to say so in words rather than as a traceback three frames deep in Pillow.
-SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "icon.png"
-if not SOURCE.exists():
-    raise SystemExit(
-        f"no source icon at {SOURCE}\n"
-        "The master is deliberately not in the repository. Pass one:\n"
-        "    python build-icon.py path/to/icon-512.png"
-    )
+# Which file in the set holds which exact size. Anything not listed is derived.
+ICONSET = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "iconset"
+SET_FILES = {
+    16: "favicon-16x16.png",
+    32: "favicon-32x32.png",
+    128: "favicon-128.png",
+    144: "apple-touch-icon-144x144.png",
+    512: "icon512.png",
+}
+MASTER_SIZE = 512
 
-source = Image.open(SOURCE).convert("RGBA")
-print(f"source {source.name} {source.width}x{source.height}")
+
+def load(path):
+    with Image.open(path) as im:
+        return im.convert("RGBA").copy()
 
 
 def ladder(image, target):
@@ -54,9 +62,7 @@ def dib(im):
     w, h = im.size
     px = im.load()
     stride = ((w + 31) // 32) * 4
-    header = struct.pack(
-        "<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0, w * h * 4 + stride * h, 0, 0, 0, 0
-    )
+    header = struct.pack("<IiiHHIIiiII", 40, w, h * 2, 1, 32, 0, w * h * 4 + stride * h, 0, 0, 0, 0)
     xor = bytearray()
     for y in range(h - 1, -1, -1):
         for x in range(w):
@@ -78,12 +84,56 @@ def png(im):
     return buf.getvalue()
 
 
-PREVIEW.mkdir(parents=True, exist_ok=True)
+if not ICONSET.exists():
+    raise SystemExit(
+        f"no icon set at {ICONSET}\n"
+        "Expected the export that carries favicon-16x16.png, favicon-32x32.png, favicon-128.png,\n"
+        "apple-touch-icon-144x144.png and icon512.png. Pass another directory to override:\n"
+        "    python build-icon.py path/to/iconset"
+    )
+
+master = None
+for size, name in sorted(SET_FILES.items()):
+    if name == SET_FILES[MASTER_SIZE]:
+        continue
+    if not (ICONSET / name).exists():
+        raise SystemExit(f"the set is missing {name}, which supplies the {size}px bitmap")
+
+master = load(ICONSET / SET_FILES[MASTER_SIZE])
+print(f"master   {SET_FILES[MASTER_SIZE]} {master.width}x{master.height}")
+
+# Exact bitmaps first, straight from the set.
+exact = {}
+for size, name in sorted(SET_FILES.items()):
+    if size == MASTER_SIZE:
+        continue
+    image = load(ICONSET / name)
+    if image.width != size:
+        raise SystemExit(f"{name} is {image.width}px but claims to be the {size}px bitmap")
+    exact[size] = image
+    print(f"exact    {name} {size}x{size}")
+
+# The 24px entry lives inside the set's own .ico, so it needs no resampling either.
+ico_file = ICONSET / "favicon.ico"
+if ico_file.exists():
+    try:
+        with Image.open(ico_file) as im:
+            available = set(im.info.get("sizes", []))
+            if (24, 24) in available:
+                exact[24] = im.ico.getimage((24, 24)).convert("RGBA").copy()
+                print("exact    favicon.ico 24x24 (taken from the set's own .ico)")
+            else:
+                print(f"note     the set's .ico holds {sorted(available)}, no 24x24")
+    except Exception as error:  # noqa: BLE001 - a missing entry is not fatal, it just gets derived
+        print(f"note     could not read {ico_file.name}: {error}")
+
 images = {}
 for size in SIZES:
-    im = ladder(source, size)
-    images[size] = im
-    im.save(PREVIEW / f"{size}.png")
+    if size in exact:
+        images[size] = exact[size]
+    else:
+        images[size] = ladder(master, size)
+        print(f"derived  {size}x{size} from the {MASTER_SIZE} master (halving)")
 
 entries = [(size, dib(images[size]) if size < 256 else png(images[size])) for size in SIZES]
 offset = 6 + 16 * len(entries)
@@ -95,39 +145,42 @@ for size, blob in entries:
     )
     blobs += blob
 ico = struct.pack("<HHH", 0, 1, len(entries)) + directory + blobs
+
+written = []
+
+
+def save(path, image):
+    image.save(path)
+    written.append(path)
+
+
 (ICONS / "icon.ico").write_bytes(ico)
-print(f"wrote icon.ico  {len(ico)} bytes  {len(entries)} entries (DIB below 256, PNG at 256)")
+written.append(ICONS / "icon.ico")
+print(f"wrote    src-tauri/icons/icon.ico  {len(ico)} bytes, {len(entries)} entries (DIB below 256, PNG at 256)")
 
-# The PNG copies the bundle also carries, from the same ladder so they cannot disagree.
-images[256].save(ICONS / "128x128@2x.png")
-images[128].save(ICONS / "128x128.png")
-images[64].save(ICONS / "64x64.png")
-images[32].save(ICONS / "32x32.png")
-images[256].save(ICONS / "icon.png")
-print("rewrote 32/64/128/128@2x/icon.png from the same ladder")
+save(ICONS / "32x32.png", images[32])
+save(ICONS / "64x64.png", images[64])
+save(ICONS / "128x128.png", images[128])
+save(ICONS / "128x128@2x.png", images[256])
+# The window's own large icon: 128, because the taskbar slot at 200% scaling is 64 and this is an
+# exact 2:1 of it. `include_bytes!` compiles this in, so the widget has to be rebuilt to change it.
+save(ICONS / "icon.png", images[128])
 
-# The favicon set for the WINDOW directory, which is a different problem from the .ico.
-# When the backend is "browser" the taskbar button belongs to Edge, and a Chromium app window
-# takes its taskbar icon from the page's favicon — through its own rendering path, at its own
-# chosen size. Offering several sizes WITH their `sizes` attribute declared lets it pick a
-# bitmap at the resolution it wants instead of scaling one. It may still render small; the
-# Tauri backend is the only path that gets a real multi-resolution window icon.
-WINDOW = ROOT / "window"
-for size in (16, 32, 48, 256):
-    images[size].save(WINDOW / f"icon-{size}.png")
-images[256].save(WINDOW / "icon.png")
+save(WINDOW / "icon-16.png", images[16])
+save(WINDOW / "icon-32.png", images[32])
+save(WINDOW / "icon-48.png", images[48])
+save(WINDOW / "icon-256.png", images[256])
+save(WINDOW / "icon.png", images[128])
 (WINDOW / "icon.ico").write_bytes(ico)
-print("wrote window/icon{,-16,-32,-48,-256}.png and window/icon.ico")
+written.append(WINDOW / "icon.ico")
 
-# A 4x-magnified sheet of the size that actually matters, for eyeballing.
-old = Image.open(ROOT / "build" / "icon-old-32.png").convert("RGBA") if (ROOT / "build" / "icon-old-32.png").exists() else None
-new = images[32].resize((128, 128), Image.Resampling.NEAREST)
-if old is not None:
-    sheet = Image.new("RGBA", (272, 128), (24, 24, 26, 255))
-    sheet.paste(old.resize((128, 128), Image.Resampling.NEAREST), (0, 0))
-    sheet.paste(new, (144, 0))
-    sheet.save(ROOT / "build" / "icon-compare.png")
-    print("wrote build/icon-compare.png  (left: tauri icon's 32px, right: this ladder's)")
-else:
-    new.save(ROOT / "build" / "icon-new-32.png")
-    print("wrote build/icon-new-32.png  (no old copy to compare against)")
+# Read every written file back. A ladder that silently produced a 1x1, or an .ico that lost an
+# entry, is exactly the kind of failure that only shows up as "the icon looks wrong" much later.
+print("\nread back:")
+with Image.open(ICONS / "icon.ico") as check:
+    print(f"  src-tauri/icons/icon.ico entries {sorted(check.info.get('sizes', []))}")
+for path in written:
+    if path.suffix == ".ico":
+        continue
+    with Image.open(path) as check:
+        print(f"  {path.relative_to(ROOT).as_posix():<28} {check.width}x{check.height} {check.format}")
