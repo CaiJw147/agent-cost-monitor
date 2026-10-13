@@ -264,13 +264,16 @@ function startWindowScript(mode, timeoutMs) {
 async function launchTauri() {
   if (!existsSync(TAURI_EXE)) {
     log("tauri backend requested but the window is not built");
-    say("  the Tauri window is not built yet — run: npm run window:tauri");
+    say("  the Tauri window is not built — build it from a checkout with Rust: npx tauri build");
     return false;
   }
   say(`opening the Tauri window (${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y})`);
+  // Its stderr is captured rather than thrown away. Discarding it is how "the widget failed" and
+  // "the widget is slow" became the same event from the outside — and a false "failed" costs the
+  // user the blurred browser window, which is worse than the wait it was trying to avoid. The
+  // widget explains itself in one sentence; that sentence belongs in the log.
   const child = spawn(TAURI_EXE, [], {
-    detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
     env: {
       ...process.env,
@@ -282,21 +285,28 @@ async function launchTauri() {
       ACM_ALWAYS_ON_TOP: CONFIG.alwaysOnTop ? "1" : "0",
     },
   });
+  let complaint = "";
+  child.stderr?.on("data", (chunk) => {
+    complaint += String(chunk);
+  });
   child.unref();
   log(`tauri window launched ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}, alwaysOnTop=${CONFIG.alwaysOnTop}`);
 
-  // Then wait for its window, and say so if it never arrives.
-  //
-  // A widget that cannot create its window — no interactive desktop, a missing WebView2 —
-  // exits at once, with its explanation on a stderr that went to /dev/null. Without this check
-  // the launcher reported success and the user had no window at all: the failure mode being
-  // "ACM silently does not start". Returning false hands it to the browser fallback instead.
-  const probe = await startWindowScript("repair", 4000);
+  // Then wait for its window, and say so if it never arrives — for fifteen seconds, not four.
+  // A cold WebView2 start on a loaded machine can take longer than four, and the widget does
+  // arrive; calling that a failure opens a second, inferior window on top of the good one.
+  const probe = await startWindowScript("repair", 15_000);
   if (probe.startsWith("HANDLED")) {
+    child.stderr?.destroy();
     say(`window ${probe}`);
     return true;
   }
-  log("the tauri widget showed no window within 4s; falling back to the browser");
+  const lines = complaint.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length === 0) log("the tauri widget said nothing at all before the probe gave up");
+  else for (const line of lines) log(`tauri widget said: ${line}`);
+  log("the tauri widget showed no window within 15s; falling back to the browser");
+  say("  the widget did not appear within 15s; falling back to a browser window (see: acm log)");
+  child.stderr?.destroy();
   return false;
 }
 

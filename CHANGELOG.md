@@ -4,6 +4,51 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.12] — 2026-10-13
+
+### Fixed
+
+- **The launcher threw away the widget's own explanation, and called a slow start a failure.**
+  Chasing a taskbar icon that stayed blurred found this instead, and it was the cause:
+
+  ```
+  15:57:52  the tauri widget showed no window within 4s; falling back to the browser
+  ```
+
+  Every launch was falling back to an **Edge** window — the one backend whose taskbar icon cannot
+  be crisp, because a Chromium app window takes it from the page favicon through Chromium's own
+  path. So the widget was never on screen to be judged, and its failure was invisible: spawned with
+  `stdio: "ignore"`, its stderr — one sentence naming the reason — went nowhere. Two changes:
+
+  - the widget's stderr is captured into the window log, so "failed" and "slow" stop being the same
+    event from the outside. Demonstrated on the failure path this shell can reproduce:
+
+    ```
+    tauri widget said: agent-cost-monitor: could not create the window: 拒绝访问。 (os error 5)
+    tauri widget said: This needs an interactive desktop session with the WebView2 runtime.
+    ```
+
+  - the probe waits **15 s, not 4**. A cold WebView2 start on a loaded machine can exceed four
+    seconds, and the widget does arrive — declaring failure then opens a second, inferior window on
+    top of the good one.
+
+### Notes
+
+- **The icon work was not the problem, and the artwork is measurably innocent.** Gradient energy in
+  the supplied bitmaps — a blurred bitmap has weak, wide gradients — measures 25.1 at 16 px and
+  16.8 at 32 px, i.e. genuinely sharp edges, and the window icon (128 px) is an exact 2:1 of the
+  64 px slot a 200%-scaled taskbar asks for.
+- **What the taskbar actually draws:** for a running window it uses the **window's** own large icon,
+  never the exe's resource and never a favicon. Windows *downscaling* is fine; **upscaling** is what
+  blurs, which is why a 16 px resource in a 32 px slot looks soft and a 128 px icon in a 64 px slot
+  does not.
+- **The shell's icon cache can keep an old bitmap** for an exe path after the icon changes — the
+  caches here were last written before the rebuild. Restarting Explorer, or deleting
+  `%LOCALAPPDATA%\Microsoft\Windows\Explorer\iconcache_*.db` and restarting it, is the cure.
+- **Tauri sets only the window's large icon; `ICON_SMALL` is never set.** The small-icon slot
+  therefore falls back to whatever Windows derives. Setting both, from the exact 32 and 128
+  bitmaps, is the next lever if the taskbar still looks soft on the widget path.
+
 ## [0.15.11] — 2026-10-13
 
 ### Changed

@@ -172,7 +172,11 @@ and only `acm launch --new` opens a second one.
     default globe the same soft way, which is the quickest proof that the artwork is not at fault.
     `backend: "tauri"` avoids both: the widget declares its own size and carries a real window
     icon, built at **128 px** so that the 64 px taskbar slot of a 200% display is an exact 2:1
-    reduction. The window icon is compiled in, so changing it means rebuilding the widget.
+    reduction. The window icon is compiled in, so changing it means rebuilding the widget, and the
+    shell's icon cache can go on drawing an older bitmap for the same exe path — restart Explorer
+    to clear it. If the widget fails to appear, its own explanation is written to the window log
+    (`acm log`) rather than discarded; the browser fallback then runs, and that fallback is the one
+    case where a soft taskbar icon is unavoidable.
 12. **The balance is deliberately not shown.** It is DeepSeek's, and only DSH can read it, so in
     a window that also serves Codex and Claude Code it would describe a different provider.
 13. **Tiered pricing is not applied.** 80 of the 459 entries in the fetched list publish a second
