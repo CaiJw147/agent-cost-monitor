@@ -589,11 +589,17 @@ function main() {
     };
     const before = versionAt(packageRoot);
     say(`  installed   ${before ?? "unknown"}   ${packageRoot}`);
-    const target = flag("local") ? `"${packageRoot}"` : "agent-cost-monitor@latest";
-    say(`  installing  ${target}${flag("local") ? "  (this checkout)" : "  from npm"}`);
+    const local = flag("local");
+    const target = local ? `"${packageRoot}"` : "agent-cost-monitor@latest";
+    // A directory install over an existing global one fails with EEXIST: npm will not overwrite
+    // the files it just finished writing. `--force` is the documented answer for that case and is
+    // applied only here, where the source is the checkout you are standing in, not to a registry
+    // install where it would also wave through peer-dependency mismatches.
+    const options = local ? " --force" : "";
+    say(`  installing  ${target}${local ? "  (this checkout)" : "  from npm"}`);
     let status = 1;
     try {
-      execFileSync(`npm install -g ${target}`, { stdio: "inherit", shell: true });
+      execFileSync(`npm install -g ${target}${options}`, { stdio: "inherit", shell: true });
       status = 0;
     } catch (error) {
       say(`  npm failed: ${error.message}`);
