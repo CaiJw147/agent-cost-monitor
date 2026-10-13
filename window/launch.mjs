@@ -345,11 +345,18 @@ const existing = probe.startsWith("HANDLED");
 if (existing) {
   log(`an existing window was checked: ${probe}`);
   say(`window ${probe}`);
-  if (ifNeeded) {
-    log("--if-needed: an existing window is up; nothing new opened");
-    say("an existing window is up; nothing new opened");
+  // Reuse is the default; `--new` is how you ask for a second window. This branch used to require
+  // `--if-needed`, which the hooks pass and a hand-typed `acm launch` does not — and a launch that
+  // fell past this point reached the browser path, whose `place` script finds the FIRST window
+  // with our title and moves it to the configured geometry. So a window the user had positioned
+  // snapped back to the corner whenever anything ran a plain `acm launch`. Whether a window moves
+  // must not depend on which flags the caller happened to pass.
+  if (!process.argv.includes("--new")) {
+    log(ifNeeded ? "--if-needed: an existing window is up; nothing new opened" : "an existing window is up; reused it (--new opens a second)");
+    say(ifNeeded ? "an existing window is up; nothing new opened" : "an existing window is up; reused it rather than moving or duplicating it");
     process.exit(0);
   }
+  log("--new: a second window was requested, so the existing one is left exactly where it is");
 }
 
 if (useTauri && (await launchTauri())) {

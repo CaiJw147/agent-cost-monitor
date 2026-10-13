@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.10] — 2026-10-13
+
+### Fixed
+
+- **A window you had positioned could be snapped back to the corner by a launch that was never
+  asked to move anything.** Reported as "the widget location resets every turn, again". Two things
+  had to be true together, and on the reporting machine they were:
+
+  1. the Claude Code window hooks were installed by an earlier version and had never been removed
+     — 0.15.7 stopped *installing* them, but only a later `acm hook on` can remove an existing one
+     — so every prompt in the desktop app ran `acm launch --if-needed --host claude`;
+  2. the launcher reused an existing window **only when `--if-needed` was present**. A hook without
+     it, or any hand-typed `acm launch`, fell through to the browser path, whose `place` script
+     finds the first window with our title and re-applies the configured geometry.
+
+  Reuse is now the default for every caller and only `--new` opens a second window, so a window's
+  position cannot depend on which flags the caller happened to pass. Verified by moving the window
+  by hand to `1200,300`, running `acm launch` with no flags, and re-reading its rectangle:
+  `1200,300`, with the window count unchanged.
+
+- **The obsolete Claude Code hooks were removed from the reporting machine** — the status line and
+  a4phone's own hooks are untouched. 0.15.7 could only remove what it found when `acm hook on` next
+  ran; that had not happened, which is why the per-prompt window launches were still firing.
+
+### Notes
+
+- Residual, stated plainly: `--new` still lets the `place` script act on the first matching window,
+  so deliberately asking for a second window can nudge an existing one. A fresh window takes its
+  geometry from the browser arguments either way.
+
 ## [0.15.9] — 2026-10-13
 
 ### Fixed

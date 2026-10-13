@@ -140,7 +140,9 @@ prompt entry for Claude Code — and only fall back to usage samples when it rec
 | `pollMs` | `1000` | How often the window asks for figures | `ACM_POLL_MS` |
 
 `SPEND_WATCH_CURRENCY=USD` prices in dollars. The window puts itself back on top and repairs a
-window that was hidden or minimised — but never moves one you have positioned yourself.
+window that was hidden or minimised — but never moves one you have positioned yourself, whichever
+flags the launch was given. Reuse is the default: an existing window is left exactly where it is,
+and only `acm launch --new` opens a second one.
 
 ## Limitations
 
