@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.9] — 2026-10-13
+
+### Fixed
+
+- **A rate you delete now actually disappears.** Reported as "how could `gpt-6-sol` be 0-0-0",
+  which turned out to be my own doing rather than the provider's. The fetched list carries
+  `openai/gpt-6-sol` at **$2 in / $10 out per million** (cached $0.20) — the card was right. The
+  zero came from a *placeholder override with zero rates* that I had written into the user's rates
+  file: the merge had already copied that row into the cache, and emptying the file afterwards
+  could not remove it, because a row cannot delete itself.
+
+  The merge now records which keys the local table introduced (`localKeys`) and **removes them
+  before applying the next merge**, so an emptied file leaves the fetched table exactly as fetched.
+  This is the general form of the bug: a corrected or deleted local rate would otherwise have gone
+  on pricing a model at its old value indefinitely, and it would have looked authoritative.
+
+### Notes
+
+- Two facts about the source list, found while auditing it, are now written down as limitations:
+  **80 of 459 entries publish tiered rates** (`overrides[]`, a second rate above a token threshold,
+  e.g. doubled past 272k prompt tokens) and those tiers are ignored, so a very long-context call is
+  understated; and **19 of 459 are genuinely priced at zero** by the source, nearly all `:free`
+  variants — so a zero is not always a missing price, which is why the local rates table exists for
+  the case where your provider charges and the listing says nothing.
+
 ## [0.15.8] — 2026-10-13
 
 ### Added

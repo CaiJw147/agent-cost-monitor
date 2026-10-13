@@ -171,7 +171,16 @@ window that was hidden or minimised — but never moves one you have positioned 
     carries a real 256 px window icon.
 12. **The balance is deliberately not shown.** It is DeepSeek's, and only DSH can read it, so in
     a window that also serves Codex and Claude Code it would describe a different provider.
-13. **The rate card comes from `openrouter.ai`, and without it nothing but DeepSeek can be
+13. **Tiered pricing is not applied.** 80 of the 459 entries in the fetched list publish a second
+    rate above a token threshold (`overrides[]`, e.g. a doubled rate past 272k prompt tokens).
+    Those tiers are ignored, so a very long-context call is understated; the first-tier rate is
+    used for the whole call.
+14. **Some entries are genuinely priced at zero by the source** — 19 of 459, nearly all `:free`
+    variants — so a zero is not always a missing price. Where a model you use reads zero and your
+    provider charges for it, give it rates yourself (above); where it reads zero and is free, leave
+    it. What must never happen is a zero standing in for "unknown", which is why an unpriced model
+    says `(no rate card)` rather than `¥0.00`.
+15. **The rate card comes from `openrouter.ai`, and without it nothing but DeepSeek can be
     priced.** Where that host is unreachable — it times out from some networks — the bundled
     DeepSeek table still prices DeepSeek, every other model reads as unpriced, and the line says
     so (`(no rate card)`) rather than showing a bare `¥0.00`. A failed fetch is retried after ten

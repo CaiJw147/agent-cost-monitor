@@ -144,11 +144,21 @@ async function refreshCache() {
   // prices, and "unpriced" reads as "free" on the line. Done here rather than at render time so
   // every reader of the cache (the window as well as this line) sees the same numbers.
   const local = readLocalRates();
-  if (Object.keys(local.models).length > 0) {
-    const current = loadCache();
-    if (current !== undefined) {
-      saveCache({ ...current, models: mergeLocalRates(current.models, local), localRateCount: Object.keys(local.models).length });
-    }
+  const current = loadCache();
+  if (current !== undefined) {
+    // The keys the previous merge introduced are removed before this one runs, because a stale row
+    // cannot remove itself. That is not cosmetic: a placeholder row priced at zero kept pricing a
+    // real model at zero long after the file that said so had been emptied, and the line reported
+    // it with a straight face. An emptied file must leave the fetched table exactly as fetched.
+    const models = { ...current.models };
+    for (const key of current.localKeys ?? []) delete models[key];
+    const merged = mergeLocalRates(models, local);
+    saveCache({
+      ...current,
+      models: merged,
+      localKeys: Object.keys(mergeLocalRates({}, local)),
+      localRateCount: Object.keys(local.models).length,
+    });
   }
 
   if (fetched) recordPricing(now, usdToCny, pricingRows(index));
