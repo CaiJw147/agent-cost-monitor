@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.8] — 2026-10-13
+
+### Added
+
+- **Your own rates, for models the fetched card does not cover.** Reported as "it still estimates
+  0.00/0.00 for `gpt-6-sol`": that model is not in the public list **and** this machine cannot
+  reach the list anyway, so there was no price source at all — and an unpriced model reads as a
+  free one, which is the worst way to be wrong. Rates can now be supplied by hand in
+  `~/.agent-cost-monitor.pricing.json` (USD per million tokens, `input` / `cachedInput` / `output`):
+
+  ```json
+  { "models": { "gpt-6-sol": { "input": 1.25, "cachedInput": 0.125, "output": 10 } } }
+  ```
+
+  They win over the fetched card for the names they list, are **re-applied after every fetch** so a
+  successful fetch cannot discard the only prices a blocked network can have, and live outside the
+  cache directory because `acm uninstall` may clear that and a table typed by hand is not ours to
+  delete. A row without an `output` rate is skipped rather than half-applied — pricing output at
+  zero would understate a turn while looking priced — and a missing `cachedInput` falls back to the
+  plain input rate rather than to zero, which is the conservative direction.
+
+### Added
+
+- **`acm update`** installs the published version (`npm install -g agent-cost-monitor@latest`) and
+  prints the version before and after, so "updated" that moved nothing is visible as such.
+  `acm update --local` reinstalls from a checkout instead, which is how a fix reaches a machine
+  before it is published.
+
 ## [0.15.7] — 2026-10-13
 
 ### Fixed

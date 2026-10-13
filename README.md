@@ -34,6 +34,19 @@ card, with DeepSeek's peak/off-peak periods applied and USD→CNY converted at t
 rate. Nothing is measured or estimated from wall-clock time; an unpriced model contributes
 nothing rather than a guess.
 
+**If a model you use is missing from that card — or your network cannot reach the list at all —
+give it rates yourself** in `~/.agent-cost-monitor.pricing.json`, in USD per million tokens:
+
+```json
+{ "models": { "gpt-6-sol": { "input": 1.25, "cachedInput": 0.125, "output": 10 } } }
+```
+
+Those win over the fetched card for the names you list, are re-applied after every fetch (a good
+fetch must not discard the only prices your machine can have), and are deliberately *not* kept in
+the cache directory, because `acm uninstall` may clear that and a table you typed is not ours to
+delete. A row with no `output` rate is skipped rather than half-applied: pricing output tokens at
+zero would understate a turn while looking priced.
+
 That rate card is also kept **offline**, in `~/.cache/spend-watch/`: a machine-readable record
 (`pricing-rows.json`) and a readable document (`pricing.md`) listing every model's rates, when
 they were fetched, and when they last *changed* — the document is only rewritten when the fetched

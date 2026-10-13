@@ -25,7 +25,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { burnPerHour, usageCost } from "../lib/cost.js";
 import { createPriceBook, canonicalName, parseOpenRouterModels } from "../lib/pricing.js";
-import { diffPricing, pricingRows, renderPricingDoc, summariseDiff } from "../src/pricing-doc.mjs";
+import { diffPricing, pricingRows, renderPricingDoc, summariseDiff, mergeLocalRates, readLocalRates } from "../src/pricing-doc.mjs";
 import { parseEcbDaily } from "../lib/fx.js";
 import { resolveConfig } from "../src/autostart.mjs";
 
@@ -138,6 +138,18 @@ async function refreshCache() {
     modelsFetchedAt: fetched ? now : (previous.modelsFetchedAt ?? null),
     lastError: fetched ? null : `could not fetch the model list from ${OPENROUTER_MODELS_URL}`,
   });
+
+  // Rates you typed yourself are laid over whatever the cache now holds — including after a fetch
+  // that failed, because a machine whose network cannot reach the list has no other source of
+  // prices, and "unpriced" reads as "free" on the line. Done here rather than at render time so
+  // every reader of the cache (the window as well as this line) sees the same numbers.
+  const local = readLocalRates();
+  if (Object.keys(local.models).length > 0) {
+    const current = loadCache();
+    if (current !== undefined) {
+      saveCache({ ...current, models: mergeLocalRates(current.models, local), localRateCount: Object.keys(local.models).length });
+    }
+  }
 
   if (fetched) recordPricing(now, usdToCny, pricingRows(index));
 }

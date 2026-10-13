@@ -17,6 +17,10 @@ import { fileURLToPath } from "node:url";
 
 import { describeHosts, looksLikePluginDir, planClaudeInstall, planClaudeUninstall, pluginSpec } from "../src/install.mjs";
 import { pricingPaths, readPricingRecord } from "../src/pricing-doc.mjs";
+// `acm pricing --refresh` and `acm update` both shell out to npm or to node. This import was
+// missing, so `acm pricing --refresh` would have thrown the first time anyone ran it — shipped in
+// 0.15.6 and not caught, because no test executes the CLI's command dispatch.
+import { execFileSync } from "node:child_process";
 import {
   claudeCommandFile,
   claudeCommandPath,
@@ -568,6 +572,38 @@ function main() {
     const mode = argv.find((a) => ["on", "off", "status"].includes(a)) ?? "status";
     if (mode !== "status") say(`hook ${mode}${dryRun ? " (dry run)" : ""}`);
     return runHookCommand(mode) === 0 ? 0 : 1;
+  }
+
+  if (command === "update") {
+    // Updating means asking npm for the published version, because the installed copy is what
+    // runs. `--local` reinstalls from this checkout instead, which is how a fix reaches a machine
+    // before it is published. Either way both versions are printed: "updated" that moved nothing
+    // is not an update, and saying so is the point of reporting the before and the after.
+    const packageRoot = join(process.argv[1] ?? ".", "..", "..");
+    const versionAt = (root) => {
+      try {
+        return JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ?? undefined;
+      } catch {
+        return undefined;
+      }
+    };
+    const before = versionAt(packageRoot);
+    say(`  installed   ${before ?? "unknown"}   ${packageRoot}`);
+    const target = flag("local") ? `"${packageRoot}"` : "agent-cost-monitor@latest";
+    say(`  installing  ${target}${flag("local") ? "  (this checkout)" : "  from npm"}`);
+    let status = 1;
+    try {
+      execFileSync(`npm install -g ${target}`, { stdio: "inherit", shell: true });
+      status = 0;
+    } catch (error) {
+      say(`  npm failed: ${error.message}`);
+    }
+    const after = versionAt(packageRoot);
+    if (status === 0) {
+      say(before !== undefined && after === before ? `  already current (${after})` : `  updated     ${before ?? "?"} -> ${after ?? "?"}`);
+      say("  restart the window for the new code to be drawn:  acm launch --new");
+    }
+    return status;
   }
 
   if (command === "pricing") {

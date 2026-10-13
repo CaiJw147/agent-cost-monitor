@@ -12,6 +12,11 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+// `canonicalName` is what lets a hand-written rate meet the spelling a session actually records —
+// a bare adapter id against a vendor-prefixed one. Referencing it without importing it is what the
+// pricing-local tests caught, one run after it was written.
+import { canonicalName } from "../lib/pricing.js";
+
 /**
  * Where the three files live.
  *
@@ -35,6 +40,56 @@ export function readPricingRecord(rowsPath) {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The rates you type yourself.
+ *
+ * Not in the cache directory, because `acm uninstall` is allowed to clear that and a table someone
+ * entered by hand is not ours to delete. This exists for the case the fetch cannot cover: a model
+ * the public list does not carry, or a machine whose network cannot reach the list at all — where
+ * without it every figure reads zero and reads it as though the session had been free.
+ */
+export function localRatesPath() {
+  return join(homedir(), ".agent-cost-monitor.pricing.json");
+}
+
+/** Your table, or `{ models: {} }` when there is none. Never throws: a broken file is not fatal. */
+export function readLocalRates() {
+  try {
+    const parsed = JSON.parse(readFileSync(localRatesPath(), "utf8"));
+    if (parsed === null || typeof parsed !== "object") return { models: {} };
+    return { models: typeof parsed.models === "object" && parsed.models !== null ? parsed.models : {} };
+  } catch {
+    return { models: {} };
+  }
+}
+
+/**
+ * Your rates laid over the fetched ones.
+ *
+ * USD per million tokens, the same unit as the card, with the same shape the lookup expects
+ * (`cacheMiss` is a plain input token, `cacheHit` a cached one). A model you name wins over the
+ * fetched entry of the same name, because you are the more specific source — and a name with no
+ * output rate is skipped rather than half-applied, since a partial row would price output at zero.
+ */
+export function mergeLocalRates(models, local) {
+  const merged = { ...(models ?? {}) };
+  for (const [name, row] of Object.entries(local?.models ?? {})) {
+    if (typeof row?.output !== "number" || !Number.isFinite(row.output)) continue;
+    const input = Number.isFinite(row.input) ? row.input : 0;
+    const flat = {
+      currency: "USD",
+      cacheHit: Number.isFinite(row.cachedInput) ? row.cachedInput : input,
+      cacheMiss: input,
+      output: row.output,
+      label: typeof row.label === "string" ? row.label : "local",
+    };
+    for (const key of new Set([name, canonicalName(name)])) {
+      if (key !== "") merged[key.toLowerCase()] = flat;
+    }
+  }
+  return merged;
 }
 
 /** USD per million tokens, as the engine's rate card stores them. */
