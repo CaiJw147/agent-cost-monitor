@@ -165,6 +165,19 @@ function withBackup(path, write) {
  * event rather than on a command name.
  */
 function hookClaude(mode) {
+  // Claude Code's CLI gets the status line and NOTHING else. A window on top of a line that
+  // already shows the same figures is noise, and "the injection never showed up but a pop-up did"
+  // is what that looks like from the outside. The window hooks exist for harnesses with no status
+  // row — and because the CLI and the desktop app share one settings.json, this cannot be decided
+  // per app, so it is opt-in: `on` without `--window` actively REMOVES what an earlier version
+  // installed, which is how an existing machine gets back to line-only.
+  const wantsWindow = flag("window") === true;
+  if (mode === "on" && !wantsWindow) {
+    say("  Claude Code uses the status line, so no window hook is installed.");
+    say("  (its CLI and desktop app share one settings file, so a hook would open a window in the CLI too)");
+    say("  on the desktop app and want the window as well?  acm hook on --host claude --window");
+  }
+  const effective = mode === "on" && !wantsWindow ? "off" : mode;
   let settings;
   try {
     settings = JSON.parse(readFileSync(CLAUDE_SETTINGS, "utf8"));
@@ -172,17 +185,19 @@ function hookClaude(mode) {
     say(`  skipped: ${CLAUDE_SETTINGS} ${existsSync(CLAUDE_SETTINGS) ? "does not parse" : "does not exist"} (${error.code ?? error.message})`);
     return 1;
   }
-  const planned = mode === "on" ? planClaudeHookInstall(settings, "claude") : planClaudeHookRemove(settings);
+  const planned = effective === "on" ? planClaudeHookInstall(settings, "claude") : planClaudeHookRemove(settings);
+  // Every message below follows `effective`, not `mode`: when the rule above turned an `on` into a
+  // removal, a line claiming it "would add" a hook was the exact opposite of what happened.
   if (!planned.changed) {
-    say(mode === "on" ? "  already installed" : "  not installed");
+    say(effective === "on" ? "  already installed" : "  not installed");
     return 0;
   }
   if (dryRun) {
-    say(`  would ${mode === "on" ? "add" : "remove"} hooks.SessionStart in ${CLAUDE_SETTINGS}`);
+    say(`  would ${effective === "on" ? "add" : "remove"} hooks.SessionStart in ${CLAUDE_SETTINGS}`);
     return 0;
   }
   withBackup(CLAUDE_SETTINGS, () => writeFileSync(CLAUDE_SETTINGS, JSON.stringify(planned.settings, null, 2) + "\n"));
-  say(`  ${mode === "on" ? "installed" : "removed"}  hooks.SessionStart (startup) in ${CLAUDE_SETTINGS}`);
+  say(`  ${effective === "on" ? "installed" : "removed"}  hooks.SessionStart (startup) in ${CLAUDE_SETTINGS}`);
   return 0;
 }
 

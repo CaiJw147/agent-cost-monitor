@@ -4,6 +4,39 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.7] — 2026-10-13
+
+### Fixed
+
+- **A fresh install showed no status line at all — and took eleven seconds to say nothing.**
+  Reported from a second machine: the pop-up appeared, the line did not. Measured here:
+
+  ```
+  cold (no rate card):  10,798 ms
+  warm:                     71 ms
+  ```
+
+  The first-run path fetched the rate card inline under a 2.5 s cap, and the cap was a lie: the
+  fetch kept Node's event loop alive until the socket gave up, so the script ran for ten seconds.
+  A status line is allowed a moment, not ten seconds, so Claude Code rendered nothing — while the
+  session hooks fired and opened the window exactly as configured. The inline fetch is gone: the
+  line renders from whatever is cached (on a cold cache it says `(no rate card)` — honest, and
+  instant) and the refresh always happens in a detached child.
+
+- **Claude Code no longer gets a window.** The rule is line-only for its CLI, and since the CLI and
+  the desktop app share one settings file, a hook cannot be limited to the desktop. `acm hook on`
+  now removes any Claude Code window hook instead of installing one, and says so; the desktop case
+  is opt-in with `acm hook on --host claude --window`. Codex and DSH keep their hooks — neither has
+  a status row.
+
+### Changed
+
+- **The status line's clock settles sooner** (8 s of quiet instead of 30 s). The window can afford
+  30 s because a host there often reports its own lifecycle; a line has no such signal, and a clock
+  that is still climbing after the work stopped is the thing people notice. The frozen value is
+  unchanged — the turn's last recorded step — and a harness that reports its duration (Codex's
+  `duration_ms`) is still used exactly: a 1 min 52 s task freezes at `1:52`.
+
 ## [0.15.6] — 2026-10-13
 
 ### Added

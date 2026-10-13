@@ -59,10 +59,22 @@ acm launch --new           # a second window on purpose
 acm launch --host codex    # read Codex, and say so on screen
 ```
 
-`acm hook on` installs a `SessionStart` **and** `UserPromptSubmit` hook for Claude Code and for
-Codex, so the window comes up when you start working rather than when you remember. Both hosts
-share one config file between their CLI and desktop apps, so this covers both. Codex may ask you
-to trust the hook once — it keeps a per-hook trust hash and nothing can forge it.
+**Claude Code gets the status line, never a window.** Its CLI and its desktop app share a single
+settings file, so a window hook cannot be limited to the desktop — and a window showing the same
+figures as a line that is already there is noise. `acm hook on` therefore *removes* any Claude Code
+window hook an earlier version installed; the only way to get one is to ask for the desktop case
+explicitly with `acm hook on --host claude --window`.
+
+`acm hook on` installs a `SessionStart` **and** `UserPromptSubmit` hook for **Codex**, so its
+window comes up when you start working rather than when you remember. Codex may ask you to trust
+the hook once — it keeps a per-hook trust hash and nothing can forge it.
+
+**The turn clock starts at the turn and stops at the turn.** Where a harness reports its own
+duration — Codex reports `duration_ms` when a task completes — that number is used *exactly*, so a
+task that took 1 min 52 s freezes at `1:52` even though the line is drawn a moment later. Where the
+harness reports nothing (Claude Code), the clock settles on the turn's last recorded step once the
+turn has clearly gone quiet: brief latency, then the correct frozen value. It never keeps climbing
+after the work stopped.
 
 ## Using DSH desktop? Read this instead
 

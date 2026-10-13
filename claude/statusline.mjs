@@ -44,7 +44,12 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 /** After a failed fetch, wait this long before trying again. */
 const RETRY_AFTER_FAILURE_MS = 10 * 60 * 1000;
 /** An in-flight turn with nothing new for this long is treated as ended. */
-const IDLE_IS_ENDED_MS = 30_000;
+// How long after the last settled step the turn is taken to be over. The window (src/figures.mjs)
+// can afford 30s because a host there often reports its own lifecycle; a status line has no such
+// signal, so it uses a shorter window to settle the clock sooner. Either way the frozen value is
+// the turn's own end — a host that reports its duration outright (Codex) freezes on that number
+// exactly, and this file has no such report to prefer.
+const IDLE_IS_ENDED_MS = 8_000;
 
 const CURRENCY = CONFIG.currency;
 const SYMBOL = CURRENCY === "USD" ? "$" : "\u00a5";
@@ -387,11 +392,13 @@ async function main() {
   const attemptedAt = Date.parse(cache?.lastAttemptAt ?? "");
   const cooled = Number.isFinite(attemptedAt) && Date.now() - attemptedAt < RETRY_AFTER_FAILURE_MS;
   let pricingNote = "";
-  if (cache === undefined) {
-    // First ever run: one short inline fetch so the first line is already priced,
-    // then everything goes through the detached child like every other poll.
-    await Promise.race([refreshCache(), new Promise((resolve) => setTimeout(resolve, 2500))]);
-  } else if (!fresh && !cooled) {
+  if (!fresh && !cooled) {
+    // Never wait for the network here. The first version fetched inline under a 2.5 s cap, and
+    // the cap was a lie: the fetch kept the event loop alive until the socket gave up, so a cold
+    // cache made this script take TEN SECONDS — far past the moment a status line must answer.
+    // That is why a fresh install showed no line at all while the window opened normally.
+    // Rendering from whatever is cached and refreshing in the background costs one unpriced
+    // poll and cannot be late.
     refreshInBackground();
   } else if (!fresh) {
     // Said out loud rather than left as a silent `¥0.00`: figures missing a rate card are a
