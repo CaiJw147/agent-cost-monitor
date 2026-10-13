@@ -25,6 +25,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { burnPerHour, usageCost } from "../lib/cost.js";
 import { createPriceBook, canonicalName, parseOpenRouterModels } from "../lib/pricing.js";
+import { diffPricing, pricingRows, renderPricingDoc, summariseDiff } from "../src/pricing-doc.mjs";
 import { parseEcbDaily } from "../lib/fx.js";
 import { resolveConfig } from "../src/autostart.mjs";
 
@@ -50,6 +51,9 @@ const SYMBOL = CURRENCY === "USD" ? "$" : "\u00a5";
 const BETA = "\u03b2";
 const CACHE_DIR = process.env.SPEND_WATCH_CACHE ?? join(homedir(), ".cache", "spend-watch");
 const CACHE_PATH = join(CACHE_DIR, "claude-pricing.json");
+/** The offline record: the rates themselves, and the document rendered from them. */
+const ROWS_PATH = join(CACHE_DIR, "pricing-rows.json");
+const DOC_PATH = join(CACHE_DIR, "pricing.md");
 
 const isMain = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
 
@@ -116,18 +120,68 @@ async function refreshCache() {
   const index = list === null ? undefined : parseOpenRouterModels(list);
   const fetched = index !== undefined && index.size > 0;
   const now = new Date().toISOString();
+  // The FX rates come from a different endpoint and can succeed on their own; keep whatever
+  // worked rather than discarding it with the part that did not.
+  const usdToCny = fx?.usdToCny ?? previous.usdToCny ?? null;
 
   saveCache({
     fetchedAt: fetched ? now : (previous.fetchedAt ?? null),
     lastAttemptAt: now,
-    // The FX rates come from a different endpoint and can succeed on their own; keep whatever
-    // worked rather than discarding it with the part that did not.
-    usdToCny: fx?.usdToCny ?? previous.usdToCny ?? null,
+    usdToCny,
     usdToCnyDate: fx?.date ?? previous.usdToCnyDate ?? null,
     models: fetched ? flattenIndex(index) : (previous.models ?? {}),
     modelsFetchedAt: fetched ? now : (previous.modelsFetchedAt ?? null),
     lastError: fetched ? null : `could not fetch the model list from ${OPENROUTER_MODELS_URL}`,
   });
+
+  if (fetched) recordPricing(now, usdToCny, pricingRows(index));
+}
+
+/**
+ * Update the offline pricing record, and rewrite the document only when the list has moved.
+ *
+ * The record is written on every successful fetch, because "when was this last checked" is itself
+ * worth knowing. The document is not: rewriting it each time would destroy the one thing it is
+ * for — being able to see *when a rate last changed* — so it is rendered when the list differs, on
+ * first run, or if it has gone missing.
+ */
+function recordPricing(now, usdToCny, rows) {
+  try {
+    const previous = loadRows();
+    const diff = previous === undefined
+      ? { added: rows.map((row) => row.id), removed: [], changed: [], empty: rows.length === 0 }
+      : diffPricing(previous.rows, rows);
+    const changedAt = previous === undefined || !diff.empty ? now : (previous.changedAt ?? now);
+    // The change summary is kept in the record, not only in the rendered document, so
+    // `acm pricing` can report what moved without parsing the Markdown back apart.
+    const snapshot = {
+      fetchedAt: now,
+      changedAt,
+      checkedAt: now,
+      source: OPENROUTER_MODELS_URL,
+      usdToCny,
+      rows,
+      lastChange: summariseDiff(diff),
+    };
+
+    mkdirSync(CACHE_DIR, { recursive: true });
+    writeFileSync(ROWS_PATH, JSON.stringify(snapshot));
+    if (previous === undefined || !diff.empty || !existsSync(DOC_PATH)) {
+      writeFileSync(DOC_PATH, renderPricingDoc({ rows, fetchedAt: now, changedAt, checkedAt: now, source: OPENROUTER_MODELS_URL, usdToCny, diff }));
+    }
+  } catch {
+    // A record that cannot be written is a lost convenience, not a broken status line.
+  }
+}
+
+/** The offline record, or undefined when nothing has ever been fetched. */
+function loadRows() {
+  try {
+    const parsed = JSON.parse(readFileSync(ROWS_PATH, "utf8"));
+    return parsed !== null && typeof parsed === "object" && Array.isArray(parsed.rows) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function refreshInBackground() {

@@ -34,6 +34,12 @@ card, with DeepSeek's peak/off-peak periods applied and USD→CNY converted at t
 rate. Nothing is measured or estimated from wall-clock time; an unpriced model contributes
 nothing rather than a guess.
 
+That rate card is also kept **offline**, in `~/.cache/spend-watch/`: a machine-readable record
+(`pricing-rows.json`) and a readable document (`pricing.md`) listing every model's rates, when
+they were fetched, and when they last *changed* — the document is only rewritten when the fetched
+list actually differs, so a rate movement is visible instead of being absorbed silently. Inspect
+it with `acm pricing`; fetch again with `acm pricing --refresh`.
+
 ## Install
 
 ```bash

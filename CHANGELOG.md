@@ -4,6 +4,37 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.6] — 2026-10-13
+
+### Added
+
+- **An offline copy of the rate card, kept up to date on its own.** Every successful fetch now
+  writes two files into `~/.cache/spend-watch/`:
+
+  - `pricing-rows.json` — the machine-readable record: one row per model, plus when it was
+    fetched, when it last changed, when it was last checked, the FX rate and the source;
+  - `pricing.md` — the document a person reads: the same metadata as a header and a table of
+    rates in USD per million tokens.
+
+  **The document is rewritten only when the list has actually changed** — that is its whole
+  purpose, and rewriting it on every fetch would destroy it. Changes are diffed per model
+  (added / removed / repriced) against the previous record, source ordering is normalised first so
+  a reshuffle is not 1,300 "repriced" models, and a failed or partial fetch writes **neither**
+  file, so a network problem cannot erase a good record. The record itself is written on every
+  successful fetch, because "when was this last checked" is worth knowing on its own.
+- **`acm pricing`** reads that record — models, when fetched, when changed, when checked, the FX
+  rate and the last change — and prints where both files are. `acm pricing --refresh` fetches
+  first. Neither needs the module's own state: it is all on disk, which is why it works on a
+  machine whose network cannot reach the rate-card host.
+
+### Notes
+
+- The diff and the document are pure functions in `src/pricing-doc.mjs` with eight tests of their
+  own, including that a reordered source is not a change, that an empty fetch produces no rows
+  rather than free models, and that a missing cache-write price drops the column instead of
+  printing dashes. A document that can say "0 models" while looking like a price list is worse
+  than no document, so the empty case is stated in words.
+
 ## [0.15.5] — 2026-10-13
 
 ### Fixed

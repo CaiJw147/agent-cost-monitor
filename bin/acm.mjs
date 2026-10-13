@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describeHosts, looksLikePluginDir, planClaudeInstall, planClaudeUninstall, pluginSpec } from "../src/install.mjs";
+import { pricingPaths, readPricingRecord } from "../src/pricing-doc.mjs";
 import {
   claudeCommandFile,
   claudeCommandPath,
@@ -534,6 +535,7 @@ function main() {
     say("  acm hook on|off|status     a SessionStart hook that opens the window");
     say("    [--host claude|codex|all]  (default: both, when their config exists)");
     say("  acm doctor                 check the pieces the status line needs\n");
+    say("  acm pricing [--refresh]    the offline rate card: what it holds, when it changed\n");
     say("  --dry-run                  print the plan, change nothing");
     say("  --force                    replace a status line configured by something else");
     return 0;
@@ -551,6 +553,36 @@ function main() {
     const mode = argv.find((a) => ["on", "off", "status"].includes(a)) ?? "status";
     if (mode !== "status") say(`hook ${mode}${dryRun ? " (dry run)" : ""}`);
     return runHookCommand(mode) === 0 ? 0 : 1;
+  }
+
+  if (command === "pricing") {
+    // The offline rate card. `--refresh` fetches it; without that flag this only reads what is
+    // already on disk, which is the whole point — the numbers stay available on a machine whose
+    // network cannot reach the list, and the document records when it last actually changed.
+    const paths = pricingPaths();
+    if (flag("refresh")) {
+      say("  fetching the model list...");
+      try {
+        execFileSync(process.execPath, [STATUSLINE, "--refresh"], { stdio: "inherit" });
+      } catch (error) {
+        say(`  fetch failed: ${error.message}`);
+      }
+    }
+    const record = readPricingRecord(paths.rows);
+    if (record === undefined) {
+      say("  no record yet - nothing has been fetched successfully");
+      say("  run: acm pricing --refresh   (needs the model list host to be reachable)");
+    } else {
+      say(`  models      ${record.rows.length}`);
+      say(`  fetched     ${record.fetchedAt ?? "never"}`);
+      say(`  changed     ${record.changedAt ?? "never"}   (only a real change moves this)`);
+      say(`  checked     ${record.checkedAt ?? "never"}`);
+      say(`  USD -> CNY  ${Number.isFinite(record.usdToCny) ? record.usdToCny.toFixed(4) : "-"}`);
+      if (typeof record.lastChange === "string" && record.lastChange !== "") say(`  last change ${record.lastChange}`);
+    }
+    say(`  record      ${paths.rows}`);
+    say(`  document    ${paths.doc}${existsSync(paths.doc) ? "" : "   (not written yet)"}`);
+    return 0;
   }
 
   if (command === "doctor") {
