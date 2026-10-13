@@ -4,6 +4,42 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.13] — 2026-10-13
+
+### Fixed
+
+- **The widget could not start at all from a host hook, and the icon was never the problem.**
+  The log finally said it, once the launcher stopped discarding stderr:
+
+  ```
+  tauri widget said: agent-cost-monitor: could not create the window: 拒绝访问。 (os error 5)
+  ```
+
+  A process started by a hook inherits that process's restrictions, and Windows refuses a WebView2
+  window inside them. **A browser escapes this by handing off to its own already-running process**
+  — which is why Edge created a window in the very same launch while our exe was refused, and why
+  the taskbar kept showing Edge's soft, favicon-derived icon.
+
+  The launcher now **retries the widget through Explorer** when the failure is "access denied"
+  (or when the widget said nothing at all). Explorer runs in the interactive session, so the window
+  it starts is a real one. Explorer cannot carry the launcher's environment, so the widget now
+  **reads its own port and geometry from `~/.agent-cost-monitor.json`** — with the environment still
+  winning, because a direct launch is the more specific instruction.
+
+- **WebView2 gets an explicit, writable data folder**: `%LOCALAPPDATA%\agent-cost-monitor\webview2`.
+  Left to the default it lands beside the executable — for a development build, inside
+  `target/release`, a directory a rebuild replaces — and a data folder left behind by an instance
+  running with different rights is a documented cause of "access denied" at startup.
+
+### Notes
+
+- The failure sentence the widget prints now names the cause rather than the symptom: it says that a
+  hook, service or background job cannot create the window, that a browser only escapes by handing
+  off to its own process, and that starting it from your own session works.
+- The icon work from 0.15.11–0.15.12 remains correct and unindicted: the window icon is the 128px
+  bitmap, an exact 2:1 of the 64px slot a 200%-scaled taskbar asks for. It simply never had a
+  window to be drawn on.
+
 ## [0.15.12] — 2026-10-13
 
 ### Fixed

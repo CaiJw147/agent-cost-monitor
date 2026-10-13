@@ -304,9 +304,33 @@ async function launchTauri() {
   const lines = complaint.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) log("the tauri widget said nothing at all before the probe gave up");
   else for (const line of lines) log(`tauri widget said: ${line}`);
+  child.stderr?.destroy();
+
+  // A widget started from a host hook inherits that process's restrictions and cannot create a
+  // WebView2 window: Windows answers "access denied". A browser escapes this by handing off to its
+  // own already-running process; we escape it by asking Explorer to start the window instead, since
+  // Explorer runs in the interactive session. Explorer cannot carry our environment, which is why
+  // the widget reads its own port and geometry from the config file — and why this second attempt
+  // has to be a real one rather than a message telling the user to go and do it themselves.
+  if (/access denied|os error 5/i.test(complaint) || complaint === "") {
+    log("retrying the widget through Explorer, which starts it in the interactive session");
+    try {
+      const viaShell = spawn("explorer.exe", [TAURI_EXE], { detached: true, stdio: "ignore", windowsHide: true });
+      viaShell.unref();
+    } catch (error) {
+      log(`could not hand the widget to Explorer: ${error.message}`);
+    }
+    const second = await startWindowScript("repair", 15_000);
+    if (second.startsWith("HANDLED")) {
+      say(`window ${second} (started through Explorer)`);
+      log("the Explorer hand-off worked");
+      return true;
+    }
+    log("the Explorer hand-off did not produce a window either");
+  }
+
   log("the tauri widget showed no window within 15s; falling back to the browser");
   say("  the widget did not appear within 15s; falling back to a browser window (see: acm log)");
-  child.stderr?.destroy();
   return false;
 }
 

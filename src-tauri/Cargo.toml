@@ -13,6 +13,11 @@ tauri-build = { version = "2", features = [] }
 # icon, and the default one comes from the 32x32 PNG in bundle.icon — a 32px image rendered
 # into a 48px slot is upscaled, which is what made it look blurred.
 tauri = { version = "2", features = ["image-png"] }
+# Read directly rather than through a hand-rolled scan of the JSON: the window has to find its own
+# port and geometry when Explorer started it, because Explorer cannot carry the launcher's
+# environment with it — and the hand-off through Explorer exists because a process started by a
+# host hook cannot create a WebView2 window at all.
+serde_json = "1"
 
 [profile.release]
 codegen-units = 1
