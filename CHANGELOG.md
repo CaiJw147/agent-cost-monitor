@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.14] — 2026-10-13
+
+### Changed
+
+- **The mark is new, and drawn for the two things that ruin an icon: a 16px slot and a blur.**
+  After the evidence said the supplied artwork was never the problem and the taskbar was still soft,
+  the useful move was to stop fighting the rendering path and design something that survives it.
+
+  `assets/acm-icon.svg` is one continuous shape — a stepped line climbing to the right, which is
+  what a burn rate does — stroked wide with round joins, in the light yellow the window already
+  uses, on **transparency** rather than a tile. Every alternative failed one of the tests: a glyph
+  goes mushy at 16px, a tile disappears against a dark taskbar, several bars merge into one blob
+  under a blur, and thin lines vanish outright. A single thick ribbon survives all of them, and a
+  deliberately blurred render confirms it degrades into a soft rising streak rather than mush —
+  which is the property that was asked for.
+
+- **`build-mark.py` renders it, reading the geometry out of the SVG** rather than repeating the
+  coordinates in a second place. Edge can rasterise SVG and does render the README banner, but its
+  headless screenshot ignored `--window-size` here and returned the desktop work area: a 16px
+  favicon came back as **746x483**. That was caught only because `build-icon.py` refuses a bitmap
+  claiming a size it does not have — which is precisely why that check exists. Pillow draws the
+  polyline at 4x and reduces once, so the pixel sizes are exact and the edges are supersampled.
+
+### Notes
+
+- The `.ico` carries 16 through 256, and the window icon remains the 128 — an exact 2:1 of the 64px
+  slot a 200%-scaled taskbar asks for. The widget is rebuilt with it, since the icon is compiled in.
+- The previous artwork is untouched in `iconset/`, so `python build-icon.py iconset` still rebuilds
+  from it; the mark in `assets/acm-icon.svg` is now what the shipped sets come from.
+
 ## [0.15.13] — 2026-10-13
 
 ### Fixed

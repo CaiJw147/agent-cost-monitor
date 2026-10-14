@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="agent-cost-monitor">
+  <title>agent-cost-monitor</title>
+  <!--
+    The mark, designed for the two things that break an icon: a 16px slot and a blur.
+
+    One continuous shape — a stepped line climbing to the right, which is what a burn rate does —
+    drawn as a single wide stroke with round joins. No thin lines, no small counters, no text and
+    no container tile. Every other candidate failed one of those: a glyph gets mushy at 16px, a
+    tile disappears on a dark taskbar, and several bars merge into one blob under a blur. A single
+    thick ribbon survives all three: blurred, it still reads as a line going up.
+
+    The colour is the light yellow the project already uses for its window, so it sits with the
+    rest of the UI and stays legible on a light or dark taskbar alike, since the background is
+    transparent rather than a tile someone has to contrast against.
+  -->
+  <polyline points="104,392 104,296 208,296 208,208 312,208 312,120 408,120"
+            fill="none"
+            stroke="#f4f1d0"
+            stroke-width="76"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+</svg>

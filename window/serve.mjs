@@ -53,11 +53,31 @@ let claudePick = { path: "", at: 0 };
  */
 let lastWindowPollAt = 0;
 
-/** Every resolution, so "why is it showing that" is answerable after the fact. */
+/**
+ * Every resolution, so "why is it showing that" is answerable after the fact.
+ *
+ * The same line is resolved once a second while nothing changes, and writing it every time made
+ * the log useless for its actual purpose: `acm log --lines 20` returned twenty identical poll
+ * lines and pushed the launcher's account of a failed launch off the screen. Runs are now
+ * collapsed — the first occurrence is written, and when the value finally changes the number of
+ * skipped repeats is recorded, so nothing is hidden and the timeline stays readable.
+ */
+let lastLogged = "";
+let skipped = 0;
+
 function log(message) {
   try {
     mkdirSync(LOG_DIR, { recursive: true });
     if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > 256 * 1024) writeFileSync(LOG_FILE, "");
+    if (message === lastLogged) {
+      skipped += 1;
+      return;
+    }
+    if (skipped > 0) {
+      appendFileSync(LOG_FILE, `${new Date().toISOString()}  daemon  (the previous line repeated ${skipped} more times)\n`);
+      skipped = 0;
+    }
+    lastLogged = message;
     appendFileSync(LOG_FILE, `${new Date().toISOString()}  daemon  ${message}\n`);
   } catch {
     /* a log that cannot be written is not a reason to fail a request */
