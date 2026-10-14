@@ -268,6 +268,20 @@ function Start-Window {
   }
 }
 
+# The daemon alone, without the window: the tray reads it for every figure, and at login there is
+# usually nothing running yet — `acm launch` would open a window the user did not ask for, and a
+# tray with no daemon is a tray showing "no data" until some agent session happens to start one.
+function Start-Daemon {
+  try {
+    $exe = if ($Node -ne "") { $Node } else { "node" }
+    $serve = Join-Path (Split-Path -Parent $PSScriptRoot) "window\serve.mjs"
+    Start-Process -FilePath $exe -ArgumentList @($serve) -WindowStyle Hidden
+    Write-Log "started the daemon, nothing was answering on the port"
+  } catch {
+    Write-Log ("could not start the daemon: " + $_.Exception.Message)
+  }
+}
+
 function Stop-Tray {
   Write-Log "stopping (asked from the menu)"
   try { $timer.Stop() } catch { }
@@ -309,6 +323,13 @@ function Refresh-Tray {
       $icon.Text = "acm · 没有数据"
       Add-Info "acm · 没有数据"
       Add-Info $why
+      # One attempt per outage, and only when nothing answers at all: a tray started at login has
+      # no daemon to read, and retrying every five seconds would spawn one per tick if the port is
+      # held by something else.
+      if ($null -eq $active -and -not $script:daemonTried) {
+        $script:daemonTried = $true
+        Start-Daemon
+      }
       Add-Separator
       Add-Action "打开窗口  (会顺带把守护进程起起来)" { Start-Window }
       Add-Action "刷新" { Refresh-Tray }
@@ -328,6 +349,8 @@ function Refresh-Tray {
     $figure = Icon-Text $active.turnCost
     $over = ($null -ne $warn -and $null -ne $burn -and ([double]$burn) -gt ([double]$warn))
     Set-Figure $figure $over
+    # Data is back, so the next outage gets its own attempt.
+    $script:daemonTried = $false
 
     Add-Info ("acm · " + $source + " · " + $model)
     if ($null -eq $completed) {
