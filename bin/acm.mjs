@@ -653,7 +653,11 @@ function trayStart() {
   // Then wait for the pid rather than assuming: a detached process says nothing, so a tray that
   // died on its first line — old PowerShell, no WinForms, a bad flag — would otherwise look
   // exactly like one that is up. The log is where it explains itself, so the log is what gets read.
-  for (let i = 0; i < 8 && trayPid() === undefined; i += 1) sleepSync(250);
+  // Six seconds, not two: PowerShell has to start and `Add-Type` compiles the one P/Invoke stub
+  // the icon needs, which measured out at over three seconds on this machine — long enough that a
+  // two-second cap called a working tray broken. Success returns as soon as the pid appears, so
+  // only the failing case ever waits this long.
+  for (let i = 0; i < 24 && trayPid() === undefined; i += 1) sleepSync(250);
   const pid = trayPid();
   if (pid === undefined) {
     say(`  the tray did not come up (${exe}); it said:`);

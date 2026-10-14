@@ -15,11 +15,20 @@
 
   One icon per session (a second `acm tray`, or a double-clicked Startup entry, leaves), and it
   exits through its own 退出 item or `acm tray --stop`.
+
+  The icon is shown while there is an agent behind the figure — any host whose transcript or
+  rollout has been written recently, or an acm window polling the daemon — and hides itself when
+  there is not. A figure that outlives its session is clutter, and the tray is meant to be there
+  without being asked for.
 #>
 [CmdletBinding()]
 param(
   [int]$Port = 7420,
   [int]$IntervalMs = 5000,
+  # Fifteen minutes of silence from every host, with no acm window open, and the icon takes itself
+  # away. Long enough to cover thinking and a slow tool call; short enough that a machine left for
+  # lunch is not still wearing this morning's figure.
+  [int]$IdleHideMs = 900000,
   # The node that started this tray, passed in rather than looked up: the login entry and the CLI
   # both already know it, and "node" is not necessarily on PATH in either context.
   [string]$Node = ""
@@ -317,6 +326,38 @@ function Refresh-Tray {
     $hosts = @{}
     foreach ($key in @("dsh", "codex", "claude")) { $hosts[$key] = Get-Data $key }
 
+    # Whether the icon should exist at all.
+    #
+    # The figure is about an agent that is running, so the icon is shown while one is (or was
+    # recently) and taken away when none is: a number that outlives its session is clutter in the
+    # corner of the screen, and the whole point of putting it in the tray was to have it there
+    # without asking for it. An acm window being open also counts, so the two surfaces come and go
+    # together — open the window and the icon is there, close it and a quiet machine takes the icon
+    # with it.
+    #
+    # "There" is answered by the hosts' own files (`activityAt`, the mtime of the transcript or
+    # rollout the figures came from), not by whether anything was spent: a turn that has ended and
+    # a session that is silent look identical in every other field, and zero spend is not absence.
+    $health = Get-Health
+    $windowTouched = if ($null -ne $health -and $null -ne $health.windowPolledAt) { [double]$health.windowPolledAt } else { 0 }
+    $nowMs = [double][DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    # A window polls this daemon once a second, so anything inside a few seconds is a window.
+    $windowOpen = $windowTouched -gt 0 -and ($nowMs - $windowTouched) -lt 10000
+    $activityAt = $null
+    foreach ($payload in @($active, $hosts["dsh"], $hosts["codex"], $hosts["claude"])) {
+      if ($null -ne $payload -and $null -ne $payload.activityAt) {
+        $at = [double]$payload.activityAt
+        if ($null -eq $activityAt -or $at -gt $activityAt) { $activityAt = $at }
+      }
+    }
+    $idleMs = if ($null -eq $activityAt) { [double]::MaxValue } else { $nowMs - $activityAt }
+    $show = $windowOpen -or ($idleMs -lt [double]$IdleHideMs)
+    if ($icon.Visible -ne $show) {
+      $quiet = if ($null -eq $activityAt) { "nothing has ever run" } else { "quiet for " + [int]($idleMs / 1000) + "s" }
+      Write-Log ("icon " + $(if ($show) { "shown" } else { "hidden" }) + ": " + $quiet + ", window " + $(if ($windowOpen) { "open" } else { "closed" }))
+    }
+    $icon.Visible = $show
+
     if ($null -eq $active -or $active.state -ne "ok") {
       $why = if ($null -eq $active) { "守护进程没有响应 (http://127.0.0.1:$Port)" } else { [string]$active.hint }
       Set-Figure "--" $false
@@ -375,15 +416,10 @@ function Refresh-Tray {
     foreach ($key in @("dsh", "codex", "claude")) { Add-Info (Host-Line $key $hosts[$key]) }
     Add-Separator
     # Whether a window is open is answerable, so the item below stops being a mystery: it says
-    # what it would find, not merely that it is possible.
-    $health = Get-Health
-    $age = if ($null -ne $health -and $null -ne $health.windowPolledAt) {
-      [double]([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) - [double]$health.windowPolledAt
-    } else {
-      $null
-    }
-    $windowOpen = ($null -ne $age -and $age -lt 10000)
+    # what it would find, not merely that it is possible. The hide rule is stated here too, because
+    # an icon that vanishes on its own is otherwise indistinguishable from one that crashed.
     Add-Info ("窗口：" + $(if ($windowOpen) { "开着（正在轮询）" } else { "未开" }))
+    Add-Info ("图标：静默 " + [int]($IdleHideMs / 60000) + " 分钟后自动隐藏；窗口开着时始终显示")
     Add-Action "打开窗口  (acm launch)" { Start-Window }
     Add-Action "刷新" { Refresh-Tray }
     Add-Action "退出（关掉这个图标）" { Stop-Tray }

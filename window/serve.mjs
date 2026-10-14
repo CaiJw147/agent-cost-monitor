@@ -105,6 +105,15 @@ function makeLookup() {
   return (model, options) => book.lookup(model, { ...options, usdToCny });
 }
 
+/** When a host's own file was last written, or undefined when it cannot be read. */
+function mtimeOf(path) {
+  try {
+    return statSync(path).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The figures, from priced units — now in src/figures.mjs, where it can be tested.
  *
@@ -140,7 +149,7 @@ function dshCompleted({ cost, ended, durationMs, models }) {
 }
 
 /** The DSH plugin already answers all of this; pass it through in one shape. */
-async function fromDsh() {
+async function fromDsh(now) {
   const response = await fetch(DSH_URL, { signal: AbortSignal.timeout(4000) });
   if (!response.ok) return { ok: false, reason: `HTTP ${response.status} from ${DSH_URL}` };
   const body = await response.json();
@@ -154,6 +163,9 @@ async function fromDsh() {
     payload: {
       state: "ok",
       source: "dsh",
+      // The panel answering is itself the activity: it runs inside an agent host, so while it is
+      // there, something is there. See the note on `activityAt` in fromCodex.
+      activityAt: now,
       sourceDetail: `dsh-budget-watcher ${body.pluginVersion ?? "?"}`,
       currency,
       symbol: currency === "USD" ? "$" : "\u00a5",
@@ -189,6 +201,11 @@ async function fromCodex(now, lookup) {
   if (rollout === undefined) return { ok: false, reason: "no rollout under ~/.codex/sessions" };
   const parsed = parseRollout(rollout.lines);
   const where = rollout.path.split(/[\\/]/).slice(-1)[0];
+  // When the host last wrote anything at all — as opposed to what it last spent, which is what
+  // every other figure here is about. A renderer that wants to know whether an agent is running
+  // right now (the tray shows and hides itself on that) has no other way to ask: `turnCost` is
+  // zero between turns, and a finished session looks exactly like a silent one.
+  const activityAt = mtimeOf(rollout.path) ?? now;
 
   if (parsed.sawUsage) {
     return {
@@ -196,6 +213,7 @@ async function fromCodex(now, lookup) {
       payload: {
         state: "ok",
         source: "codex",
+        activityAt,
         sourceDetail: `${where} \u00b7 cli ${parsed.cliVersion || "?"} \u00b7 ${parsed.provider || "?"}`,
         currency: CURRENCY,
         symbol: SYMBOL,
@@ -230,6 +248,7 @@ async function fromCodex(now, lookup) {
     payload: {
       state: "ok",
       source: "codex",
+      activityAt,
       sourceDetail: `${where} \u00b7 totals from state_5.sqlite`,
       currency: CURRENCY,
       symbol: SYMBOL,
@@ -298,6 +317,10 @@ function readClaudeTranscript(full, now, lookup) {
       payload: {
         state: "ok",
         source: "claude-code",
+        // The transcript's own mtime, not the last billed call's: a session that is open and idle
+        // still has an agent behind it, and the tray's question is "is anyone there", not "did
+        // anything get spent just now".
+        activityAt: mtimeOf(full) ?? now,
         sourceDetail: full.split(/[\\/]/).slice(-1)[0],
         currency: CURRENCY,
         symbol: SYMBOL,
