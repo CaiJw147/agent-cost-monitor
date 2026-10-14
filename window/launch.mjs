@@ -377,6 +377,16 @@ async function launchTauri() {
 
   log("the tauri widget could not be started; falling back to the browser");
   say("  the widget could not be started; falling back to a browser window (see: acm log)");
+  // A widget that cannot create a window may also never exit, and a live child holding a piped
+  // stderr keeps Node's event loop alive — so the launcher would hang for as long as that process
+  // sat there. Removing `unref()` (which was needed to see the exit event at all) is what made that
+  // possible, and it hung a real launch for five minutes. Killing it is the honest end of an
+  // attempt that has already been given up on.
+  try {
+    child.kill();
+  } catch {
+    /* already gone */
+  }
   return false;
 }
 
@@ -439,11 +449,49 @@ if (existing) {
   log("--new: a second window was requested, so the existing one is left exactly where it is");
 }
 
-if (useTauri && (await launchTauri())) {
-  process.exit(0);
+// A widget that cannot start should not be attempted on every prompt. The failure is remembered
+// for a while, so a hook-driven launch goes straight to the browser instead of paying seconds for
+// an attempt already known to fail; a success clears it, and so does the wait expiring.
+//
+// The marker's SIZE carries the state — empty is healthy, a timestamp is a failure — because this
+// module imports only the parts of node:fs it already needed, and `size` plus `mtimeMs` answers
+// both "did it fail" and "how long ago" without another import.
+const WIDGET_MARKER = join(homedir(), ".cache", "agent-cost-monitor", "widget-failed");
+const WIDGET_RETRY_MS = 10 * 60 * 1000;
+
+function widgetFailureAgeMs() {
+  try {
+    if (!existsSync(WIDGET_MARKER)) return undefined;
+    const info = statSync(WIDGET_MARKER);
+    if (info.size === 0) return undefined;
+    const age = Date.now() - info.mtimeMs;
+    return age < WIDGET_RETRY_MS ? age : undefined;
+  } catch {
+    return undefined;
+  }
 }
+
+function noteWidgetOutcome(worked) {
+  try {
+    mkdirSync(dirname(WIDGET_MARKER), { recursive: true });
+    writeFileSync(WIDGET_MARKER, worked ? "" : `the widget could not create its window at ${new Date().toISOString()}\n`);
+  } catch {
+    /* the marker is a convenience, not a requirement */
+  }
+}
+
 if (useTauri) {
-  say("  falling back to a browser window");
+  const failedAge = widgetFailureAgeMs();
+  if (failedAge !== undefined) {
+    log(`the widget failed ${Math.round(failedAge / 1000)}s ago; not attempting it again yet`);
+    say(`  the widget failed recently; opening a browser window instead (retried in ${Math.round((WIDGET_RETRY_MS - failedAge) / 60000)} min)`);
+  } else if (await launchTauri()) {
+    noteWidgetOutcome(true);
+    process.exit(0);
+  } else {
+    noteWidgetOutcome(false);
+    say("  falling back to a browser window");
+  }
 }
 
 // Awaited so this process outlives the placement it started; it is detached, so nobody sees

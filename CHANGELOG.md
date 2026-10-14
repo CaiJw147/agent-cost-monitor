@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.17] — 2026-10-13
+
+### Fixed
+
+- **A launch could hang forever after giving up on the widget.** `unref()` had to go, because it
+  suppressed the exit event the launcher was waiting for — and with it gone, a widget that cannot
+  create a window and never exits kept Node's event loop alive through its piped stderr. A real
+  launch sat for five minutes. A given-up attempt now kills the child outright, which is the honest
+  end of a process that has already been written off.
+
+- **Two of my own diagnostics were blind.** `EnumWindows` enumerates only the calling process's
+  desktop, so a window probe running inside a host hook cannot see a window the Task Scheduler
+  created in the interactive session — every "no window appeared" concluded from a hook context was
+  therefore unproven. The daemon answers without that limitation: `/health` reports
+  `windowPolledAt`, and a window polls once a second. Asked that way, nothing was polling and no
+  widget process existed, which settled that the scheduler launch fails here too. And because a
+  scheduler-started process has no stderr to capture, the widget now writes its own failure into
+  the window log itself (`note_in_log`, stamped in epoch milliseconds since there is no date crate).
+
+### Added
+
+- **A failed widget launch is remembered for ten minutes.** Hook-driven launches were paying seconds
+  per prompt for an attempt already known to fail; they now go straight to the browser. The state
+  lives in a marker file whose SIZE carries it — empty is healthy, a non-empty timestamp is a
+  failure — which needed no new import, since `statSync` already answers both questions.
+
 ## [0.15.16] — 2026-10-13
 
 ### Fixed

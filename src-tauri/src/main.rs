@@ -45,6 +45,27 @@ fn webview_data_dir() -> PathBuf {
     dir
 }
 
+/// Put a failure somewhere the launcher can read, because stderr is not always a channel.
+///
+/// When the Task Scheduler starts this process there is no pipe to capture, so the launcher saw
+/// only "no window appeared" and could not say why — the same blindness, reached by a different
+/// route. Writing to the same log the launcher uses closes that gap for every launch context.
+fn note_in_log(text: &str) {
+    let Some(home) = std::env::var("USERPROFILE").ok() else { return };
+    let dir = PathBuf::from(home).join(".cache").join("agent-cost-monitor");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| format!("{}ms", elapsed.as_millis()))
+        .unwrap_or_else(|_| "unknown".to_string());
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("window.log")) {
+        use std::io::Write;
+        let _ = writeln!(file, "{stamp}  widget  {text}");
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -97,6 +118,9 @@ fn main() {
                 .resizable(true)
                 .build()
             {
+                // The launcher cannot always hear this process — a Task Scheduler launch has no pipe
+                // to capture — so the reason is also written where the log lives, for every context.
+                note_in_log(&format!("could not create the window: {error}"));
                 eprintln!(
                     "agent-cost-monitor: could not create the window: {error}\n\
                      This needs an interactive desktop session with the WebView2 runtime.\n\
