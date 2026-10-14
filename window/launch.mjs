@@ -311,19 +311,15 @@ async function launchTauri() {
   });
   log(`tauri window launched ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}, alwaysOnTop=${CONFIG.alwaysOnTop}`);
 
-  // Wait for the window, or for the process to give up — whichever happens first. Fifteen seconds
-  // is for a cold WebView2 start on a loaded machine, not for a process that has already exited.
-  const waited = await Promise.race([
-    startWindowScript("repair", 15_000),
-    new Promise((resolve) => {
-      const watch = setInterval(() => {
-        if (doomed || exited) {
-          clearInterval(watch);
-          resolve("EXITED");
-        }
-      }, 100);
-    }),
-  ]);
+  // Let the widget refuse before committing to a wait, and do not "race" the wait against that
+  // refusal: resolving a promise does not stop the PowerShell process doing the probing, and the
+  // orphan keeps the event loop alive and holds the launcher open until its own timeout expires.
+  // Racing was why the doomed path still took thirty seconds after it was first called fixed. A
+  // widget that cannot create a window says so in about two hundred milliseconds.
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const refused = doomed || exited;
+  if (refused) log("the widget refused before any window could appear; not waiting for one");
+  const waited = refused ? "EXITED" : await startWindowScript("repair", 15_000);
   // A dead process cannot produce a window, so this second look only needs to catch one that was
   // already there — four hundred milliseconds, not two seconds.
   const probe = waited === "EXITED" ? await startWindowScript("repair", 400) : waited;
