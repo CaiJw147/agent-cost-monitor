@@ -1,6 +1,6 @@
 ![agent-cost-monitor](assets/header.svg)
 
-Live cost and burn rate for AI coding agents, wherever the agent shows you something.
+Live cost and "burn rate" for AI coding agents, wherever the agent shows you something.
 
 - **Claude Code CLI** gets a status line — one row, redrawn in place.
 - **Everything else** — Codex, DSH, or Claude Code when you want the picture rather than a
