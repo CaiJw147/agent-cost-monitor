@@ -587,8 +587,22 @@ function main() {
         return undefined;
       }
     };
-    const before = versionAt(packageRoot);
-    say(`  installed   ${before ?? "unknown"}   ${packageRoot}`);
+    // What is INSTALLED is not what is RUNNING: this command is normally run from a checkout, so
+    // `packageRoot` describes the source, and reporting its version as "installed" is a claim about
+    // the wrong directory. That is how this command reported "already current (0.15.15)" while the
+    // question being asked was whether the global copy had been refreshed. Ask npm where its global
+    // prefix is and read the version there instead.
+    const globalRoot = (() => {
+      try {
+        return execFileSync("npm root -g", { encoding: "utf8", shell: true }).trim();
+      } catch {
+        return "";
+      }
+    })();
+    const installedAt = globalRoot === "" ? undefined : join(globalRoot, "agent-cost-monitor");
+    const before = installedAt === undefined ? undefined : versionAt(installedAt);
+    say(`  installed   ${before ?? "unknown"}   ${installedAt ?? "(npm root -g unavailable)"}`);
+    say(`  source      ${versionAt(packageRoot) ?? "unknown"}   ${packageRoot}`);
     const local = flag("local");
     const target = local ? `"${packageRoot}"` : "agent-cost-monitor@latest";
     // A directory install over an existing global one fails with EEXIST: npm will not overwrite
@@ -604,9 +618,15 @@ function main() {
     } catch (error) {
       say(`  npm failed: ${error.message}`);
     }
-    const after = versionAt(packageRoot);
+    const after = installedAt === undefined ? undefined : versionAt(installedAt);
     if (status === 0) {
       say(before !== undefined && after === before ? `  already current (${after})` : `  updated     ${before ?? "?"} -> ${after ?? "?"}`);
+      // Verified, not assumed: a directory install can report success while leaving the old files in
+      // place, and "updated" that changed nothing is the one outcome worth shouting about.
+      const wanted = versionAt(packageRoot);
+      if (after !== undefined && wanted !== undefined && after !== wanted) {
+        say(`  WARNING: the global copy still says ${after}, not ${wanted}. Try: npm uninstall -g agent-cost-monitor`);
+      }
       say("  restart the window for the new code to be drawn:  acm launch --new");
     }
     return status;

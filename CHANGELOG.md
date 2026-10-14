@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.16] — 2026-10-13
+
+### Fixed
+
+- **`acm update` reported the wrong directory's version.** Run from a checkout, as it normally is, it read the version beside itself — the SOURCE — and printed it as "installed", so "already current (0.15.15)" was a claim about the repository while the question was whether the global copy had been refreshed. It now asks npm for its global prefix, reads the version there, prints the source separately, and after installing compares the two: if the global copy still disagrees with the source it says so and names the cure instead of reporting success. Verified on this machine: every file in the global copy is hash-identical to the repository, which is what settled that the install was never the problem.
+
+- **The Task Scheduler probe is capped at 8s instead of 15s.** A scheduler launch starts the widget immediately, so a working one appears within a second or two and the probe returns as soon as it does; the cap only bounds the failing case, which is the one the user pays for.
+
 ## [0.15.15] — 2026-10-13
 
 ### Fixed

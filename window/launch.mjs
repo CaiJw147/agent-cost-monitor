@@ -363,7 +363,10 @@ async function launchTauri() {
     ]);
     const started = created === 0 ? await schtasks(["/run", "/tn", taskName]) : -1;
     log(`task scheduler: create=${created} run=${started}`);
-    const second = await startWindowScript("repair", 15_000);
+    // Eight seconds, not fifteen. The scheduler launches the widget immediately, so a working one
+    // appears in a second or two and the probe returns the moment it does; the timeout only bounds
+    // the failing case, and that is the case the user actually pays for.
+    const second = await startWindowScript("repair", 8_000);
     if (second.startsWith("HANDLED")) {
       say(`window ${second} (started through the Task Scheduler)`);
       log("the Task Scheduler hand-off worked");
