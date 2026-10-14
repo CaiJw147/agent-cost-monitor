@@ -25,10 +25,10 @@
 param(
   [int]$Port = 7420,
   [int]$IntervalMs = 5000,
-  # Fifteen minutes of silence from every host, with no acm window open, and the icon takes itself
-  # away. Long enough to cover thinking and a slow tool call; short enough that a machine left for
-  # lunch is not still wearing this morning's figure.
-  [int]$IdleHideMs = 900000,
+  # Five minutes of silence from every host, with no acm window open and no turn in flight, and the
+  # icon takes itself away. Short enough that stepping away clears it; the turn-in-flight condition
+  # is what keeps a single long tool call (a build, a test run) from hiding it mid-work.
+  [int]$IdleHideMs = 300000,
   # The node that started this tray, passed in rather than looked up: the login entry and the CLI
   # both already know it, and "node" is not necessarily on PATH in either context.
   [string]$Node = ""
@@ -344,17 +344,27 @@ function Refresh-Tray {
     # A window polls this daemon once a second, so anything inside a few seconds is a window.
     $windowOpen = $windowTouched -gt 0 -and ($nowMs - $windowTouched) -lt 10000
     $activityAt = $null
+    $turnInFlight = $false
     foreach ($payload in @($active, $hosts["dsh"], $hosts["codex"], $hosts["claude"])) {
-      if ($null -ne $payload -and $null -ne $payload.activityAt) {
+      if ($null -eq $payload) { continue }
+      if ($null -ne $payload.activityAt) {
         $at = [double]$payload.activityAt
         if ($null -eq $activityAt -or $at -gt $activityAt) { $activityAt = $at }
       }
+      # A turn that is still going counts as being there even when nothing has been written for a
+      # while: a ten-minute build writes nothing, and hiding the figure in the middle of the work
+      # is the one moment it must not vanish.
+      if ($payload.live -eq $true) { $turnInFlight = $true }
     }
     $idleMs = if ($null -eq $activityAt) { [double]::MaxValue } else { $nowMs - $activityAt }
-    $show = $windowOpen -or ($idleMs -lt [double]$IdleHideMs)
-    if ($icon.Visible -ne $show) {
+    $show = $windowOpen -or $turnInFlight -or ($idleMs -lt [double]$IdleHideMs)
+    # Logged on the first decision as well as on every change, so the log always answers "is the
+    # icon there, and why" — a tray that starts shown and never changes otherwise says nothing at
+    # all, which is indistinguishable from one whose timer never ran.
+    if ($script:lastShow -ne $show) {
+      $script:lastShow = $show
       $quiet = if ($null -eq $activityAt) { "nothing has ever run" } else { "quiet for " + [int]($idleMs / 1000) + "s" }
-      Write-Log ("icon " + $(if ($show) { "shown" } else { "hidden" }) + ": " + $quiet + ", window " + $(if ($windowOpen) { "open" } else { "closed" }))
+      Write-Log ("icon " + $(if ($show) { "shown" } else { "hidden" }) + ": " + $quiet + ", window " + $(if ($windowOpen) { "open" } else { "closed" }) + ", turn " + $(if ($turnInFlight) { "running" } else { "none" }))
     }
     $icon.Visible = $show
 
@@ -419,7 +429,7 @@ function Refresh-Tray {
     # what it would find, not merely that it is possible. The hide rule is stated here too, because
     # an icon that vanishes on its own is otherwise indistinguishable from one that crashed.
     Add-Info ("窗口：" + $(if ($windowOpen) { "开着（正在轮询）" } else { "未开" }))
-    Add-Info ("图标：静默 " + [int]($IdleHideMs / 60000) + " 分钟后自动隐藏；窗口开着时始终显示")
+    Add-Info ("图标：本轮进行中，或 " + [int]($IdleHideMs / 60000) + " 分钟内有过写入时显示；窗口开着时始终显示")
     Add-Action "打开窗口  (acm launch)" { Start-Window }
     Add-Action "刷新" { Refresh-Tray }
     Add-Action "退出（关掉这个图标）" { Stop-Tray }
