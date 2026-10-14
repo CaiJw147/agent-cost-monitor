@@ -4,6 +4,35 @@ All notable changes to this project are documented in this file, together with t
 [README](README.md). The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.15] — 2026-10-13
+
+### Fixed
+
+- **The Explorer hand-off was the wrong door, and it produced a SmartScreen prompt.** Reported with
+  a screenshot of Microsoft Defender SmartScreen blocking `agent-cost-monitor-window.exe` as an
+  unrecognised app: launching an unsigned executable **through the shell** is exactly what
+  SmartScreen exists to interrupt. So the escape from the restricted context became a security
+  dialog sitting on screen with no widget behind it, while the launcher waited out its own timeout
+  — two symptoms, one cause, and the cause was the line added an hour earlier. The hand-off is now
+  to the **Task Scheduler** (`schtasks /create` with `/it`, then `/run`), which starts the process in
+  the interactive session and never touches the shell. It also needs nothing passed in, because the
+  widget reads its own port and geometry from the config file.
+
+- **A doomed launch no longer costs the full wait.** Three attempts, each defeated by an assumption:
+  `unref()` suppressed the very exit event it was waiting on; the exit event does not arrive at all
+  when the widget cannot create a window in a restricted session and simply sits there; and a
+  truncated pipeline had earlier made it look as though the process exited promptly. The reliable
+  signal is the widget's **own sentence** — it declares that it could not create the window within a
+  few hundred milliseconds — so a 100 ms watcher triggers on that, with the exit and close events
+  kept as second triggers, and the post-failure re-probe dropped from 2 s to 400 ms because a dead
+  process cannot have produced a window.
+
+### Notes
+
+- The daemon's repeated resolution line is collapsed in the log (as a count of the repeats), which is
+  what had made `acm log --lines 20` return nothing but polls and hide the launcher's own account of
+  a failed start.
+
 ## [0.15.14] — 2026-10-13
 
 ### Changed

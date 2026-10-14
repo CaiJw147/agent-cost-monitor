@@ -286,51 +286,98 @@ async function launchTauri() {
     },
   });
   let complaint = "";
+  let exited = false;
+  let doomed = false;
   child.stderr?.on("data", (chunk) => {
     complaint += String(chunk);
+    // The widget's own sentence is the reliable signal, not its exit: when the window cannot be
+    // created it says so at once but does not always leave — in a restricted session it can sit
+    // there — and waiting for a death that never comes is how a doomed launch cost the full
+    // timeout. Saying "could not create the window" is the widget declaring itself finished.
+    if (/could not create the window/i.test(complaint)) doomed = true;
   });
-  child.unref();
+  // Watching for the exit is what stops a doomed launch from costing the full wait. A widget that
+  // cannot start says so and leaves within a few hundred milliseconds; before this, the launcher
+  // went on waiting fifteen seconds for a window whose process no longer existed.
+  // NOT `unref()`: that asks Node not to keep the event loop alive for this child, and the exit
+  // event is the thing being waited for — with `unref()` it never arrived, so a widget that died in
+  // 200ms still cost the full fifteen second wait. The launcher leaves through `process.exit`, and
+  // on Windows a child outlives its parent regardless, so nothing needed unref in the first place.
+  child.on("exit", () => {
+    exited = true;
+  });
+  child.on("close", () => {
+    exited = true;
+  });
   log(`tauri window launched ${CONFIG.width}x${CONFIG.height} at ${CONFIG.x},${CONFIG.y}, alwaysOnTop=${CONFIG.alwaysOnTop}`);
 
-  // Then wait for its window, and say so if it never arrives — for fifteen seconds, not four.
-  // A cold WebView2 start on a loaded machine can take longer than four, and the widget does
-  // arrive; calling that a failure opens a second, inferior window on top of the good one.
-  const probe = await startWindowScript("repair", 15_000);
+  // Wait for the window, or for the process to give up — whichever happens first. Fifteen seconds
+  // is for a cold WebView2 start on a loaded machine, not for a process that has already exited.
+  const waited = await Promise.race([
+    startWindowScript("repair", 15_000),
+    new Promise((resolve) => {
+      const watch = setInterval(() => {
+        if (doomed || exited) {
+          clearInterval(watch);
+          resolve("EXITED");
+        }
+      }, 100);
+    }),
+  ]);
+  // A dead process cannot produce a window, so this second look only needs to catch one that was
+  // already there — four hundred milliseconds, not two seconds.
+  const probe = waited === "EXITED" ? await startWindowScript("repair", 400) : waited;
   if (probe.startsWith("HANDLED")) {
     child.stderr?.destroy();
     say(`window ${probe}`);
     return true;
   }
+
   const lines = complaint.trim().split(/\r?\n/).filter(Boolean);
-  if (lines.length === 0) log("the tauri widget said nothing at all before the probe gave up");
+  if (lines.length === 0) log(exited ? "the widget exited without saying why" : "the widget said nothing and is still running");
   else for (const line of lines) log(`tauri widget said: ${line}`);
   child.stderr?.destroy();
 
   // A widget started from a host hook inherits that process's restrictions and cannot create a
-  // WebView2 window: Windows answers "access denied". A browser escapes this by handing off to its
-  // own already-running process; we escape it by asking Explorer to start the window instead, since
-  // Explorer runs in the interactive session. Explorer cannot carry our environment, which is why
-  // the widget reads its own port and geometry from the config file — and why this second attempt
-  // has to be a real one rather than a message telling the user to go and do it themselves.
+  // WebView2 window: Windows answers "access denied". The hand-off that escapes that context is to
+  // the Task Scheduler, which starts the process in the interactive session — **not** to Explorer.
+  // Explorer also escapes the restrictions, and that is what this did first: it earns a SmartScreen
+  // prompt instead, because launching an unsigned executable through the shell is precisely what
+  // SmartScreen exists to interrupt. That prompt then sits on screen while the launcher waits out
+  // its timeout, so the user gets a security dialog, a fifteen second stall, and still no window.
+  // The Task Scheduler goes nowhere near the shell, and the widget reads its own port and geometry
+  // from the config file, so nothing needs passing to it.
   if (/access denied|os error 5/i.test(complaint) || complaint === "") {
-    log("retrying the widget through Explorer, which starts it in the interactive session");
-    try {
-      const viaShell = spawn("explorer.exe", [TAURI_EXE], { detached: true, stdio: "ignore", windowsHide: true });
-      viaShell.unref();
-    } catch (error) {
-      log(`could not hand the widget to Explorer: ${error.message}`);
-    }
+    const taskName = "agent-cost-monitor-window";
+    log("retrying the widget through the Task Scheduler, which starts it in the interactive session");
+    const schtasks = (args) =>
+      new Promise((resolve) => {
+        try {
+          const run = spawn("schtasks", args, { stdio: "ignore", windowsHide: true });
+          run.on("exit", resolve);
+          run.on("error", () => resolve(-1));
+        } catch {
+          resolve(-1);
+        }
+      });
+    // `/it` is the whole point: run only in an interactive session. `/f` overwrites an older task,
+    // so the definition cannot go stale across versions.
+    const created = await schtasks([
+      "/create", "/tn", taskName, "/tr", `"${TAURI_EXE}"`, "/sc", "once", "/st", "00:00", "/it", "/f",
+    ]);
+    const started = created === 0 ? await schtasks(["/run", "/tn", taskName]) : -1;
+    log(`task scheduler: create=${created} run=${started}`);
     const second = await startWindowScript("repair", 15_000);
     if (second.startsWith("HANDLED")) {
-      say(`window ${second} (started through Explorer)`);
-      log("the Explorer hand-off worked");
+      say(`window ${second} (started through the Task Scheduler)`);
+      log("the Task Scheduler hand-off worked");
       return true;
     }
-    log("the Explorer hand-off did not produce a window either");
+    log("the Task Scheduler hand-off did not produce a window either");
   }
 
-  log("the tauri widget showed no window within 15s; falling back to the browser");
-  say("  the widget did not appear within 15s; falling back to a browser window (see: acm log)");
+  log("the tauri widget could not be started; falling back to the browser");
+  say("  the widget could not be started; falling back to a browser window (see: acm log)");
   return false;
 }
 
