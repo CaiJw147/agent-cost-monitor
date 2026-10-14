@@ -114,6 +114,31 @@ function makeLookup() {
 
 // --------------------------------------------------------------- sources -----
 
+/**
+ * The DSH panel's own answer to "which turn finished last".
+ *
+ * The other two hosts keep their whole history on disk, so `figuresFrom` can find the turn
+ * before the running one. The panel reports only the turn it is showing, so its answer is
+ * either the turn that has just ended or nothing at all — and saying nothing while one is
+ * running is the honest half of that, because the alternative is presenting a live total as a
+ * finished one. The shape matches the engine's field for field so a renderer reads one field
+ * whichever host it happens to be looking at.
+ */
+function dshCompleted({ cost, ended, durationMs, models }) {
+  if (ended !== true) return null;
+  return {
+    index: null,
+    cost,
+    tokens: null,
+    models: models ?? [],
+    startedAt: null,
+    endedAt: null,
+    durationMs: Number.isFinite(durationMs) ? durationMs : null,
+    basis: "host",
+    current: true,
+  };
+}
+
 /** The DSH plugin already answers all of this; pass it through in one shape. */
 async function fromDsh() {
   const response = await fetch(DSH_URL, { signal: AbortSignal.timeout(4000) });
@@ -141,6 +166,12 @@ async function fromDsh() {
       // whether the axis is frozen. Its series is already turn-relative, like ours.
       ended: turn.ended === true,
       live: turn.ended !== true,
+      completed: dshCompleted({
+        cost: turn.amount ?? turn.cost ?? 0,
+        ended: turn.ended === true,
+        durationMs: Number(turn.durationMs),
+        models: turn.models,
+      }),
       turns: session.turns ?? 0,
       models: turn.models ?? [],
       series: turn.series ?? [],
@@ -329,7 +360,10 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/data") {
     const now = Date.now();
-    lastWindowPollAt = now;
+    // A window polling is not the only reader any more: the tray reads this endpoint too, and
+    // counting it would make `windowPolledAt` say a window is open whenever a tray is running —
+    // which is the opposite of what that field is for. So the tray identifies itself.
+    if (url.searchParams.get("client") !== "tray") lastWindowPollAt = now;
     const lookup = makeLookup();
     const prefer = (url.searchParams.get("host") ?? process.env.ACM_PREFER_HOST ?? "").trim().toLowerCase();
     try {
